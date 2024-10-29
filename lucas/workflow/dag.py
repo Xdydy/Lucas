@@ -101,7 +101,9 @@ class DataNode(DAGNode):
                 self.ld.value = ld.value
                 self.ld.canIter = True
                 for v in ld.value:
-                    v:Lambda
+                    if not isinstance(v,Lambda):
+                        v = Lambda(v)
+                        DataNode(v)
                     v.getDataNode().set_parent_node(self)
                     self.registry_child_node(v.getDataNode())
             else:

@@ -85,14 +85,35 @@ def function(*args, **kwargs):
             return new_func
         else: # custom runtime
             return fn
+        
 
 def workflow(fn) -> Workflow:
     route = routeBuilder.build()
-    wf = Workflow(route)
-    r  = fn(wf)
-    wf.end_with(r)
-    return wf
-        
+    def generate_workflow(
+            workflow_runner: RouteRunner = None, 
+            metadata = None) -> Workflow:
+        wf = Workflow(route,fn.__name__)
+        r  = fn(wf)
+        wf.end_with(r)
+        container_conf = get_function_container_config()
+        match container_conf['provider']:
+            case 'local-once':
+                frt = LocalOnceRuntime(
+                    None, 
+                    workflow_runner if workflow_runner else RouteRunner(route), 
+                    metadata if metadata else createRuntimeMetadata(fn.__name__)
+                )
+                wf.setRuntime(frt)
+        return wf
+    routeBuilder.workflow(fn.__name__).set_workflow(generate_workflow)
+    return generate_workflow()
+
+def recursive(fn):
+    def Y(f):
+        return (lambda x: f(lambda v: x(x)(v)))(lambda x: f(lambda v: x(x)(v)))
+    def helper():
+        return fn
+    return Y(helper)
 
 def create_handler(fn_or_workflow : type_Function | Workflow):
     container_conf = get_function_container_config()
@@ -117,8 +138,6 @@ def create_handler(fn_or_workflow : type_Function | Workflow):
                 return handler
             case 'local-once':
                 def handler(event: dict):
-                    frt = LocalOnceRuntime(event, RouteRunner(workflow.route), createRuntimeMetadata('workflow'))
-                    workflow.setRuntime(frt)
                     result = workflow.execute(event)
                     return result
                 return handler
@@ -134,4 +153,4 @@ def create_handler(fn_or_workflow : type_Function | Workflow):
                     return await fn_or_workflow(event, *args)
                 return handler
 
-__all__ = ["function","workflow","durable","create_handler"]
+__all__ = ["function","workflow","durable","create_handler",'recursive']

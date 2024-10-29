@@ -24,11 +24,12 @@ class WorkflowInput:
             return ld
 
 class Workflow:
-    def __init__(self,route:Route = None) -> None:
+    def __init__(self,route:Route = None, name:str= None) -> None:
         self.route = route
         self.params:Dict[str,Lambda] = {}
         self.dag = DAG(self)
         self.frt: Runtime = None
+        self.name: str = name
         pass
 
     def setRuntime(self, frt: Runtime):
