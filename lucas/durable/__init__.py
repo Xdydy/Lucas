@@ -13,7 +13,7 @@ def createOrchestratorScopedId(orcheId:str):
 
 
 
-def durable(fn):
+def durable_helper(fn):
     conf = config.get_function_container_config()
     match conf['provider']:
         case 'local-once':
@@ -24,6 +24,6 @@ def durable(fn):
             raise Exception(f"Unsupported provider {conf['provider']}")
 
 __all__ = [
-    "durable",
+    "durable_helper",
     "DurableWaitingResult",
 ]

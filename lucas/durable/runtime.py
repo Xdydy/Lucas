@@ -36,7 +36,7 @@ class DurableRuntime(Runtime):
     def metadata(self):
         return self._durable_metadata
 
-    async def call(self, fnName:str, fnParams: InputType):
+    def call(self, fnName:str, fnParams: InputType):
         self._pc += 1
         pc = self._pc
 
@@ -61,7 +61,7 @@ class DurableRuntime(Runtime):
             callback=callback,
             responseCtx=self._durable_metadata.runtimeData
         )
-        task = await self._frt.tell(fnName, fnParams.dict())
+        task = self._frt.tell(fnName, fnParams.dict())
         self._state.add_action(Action(kind='call', status='pending', result={}))
 
         raise DurableException(task)

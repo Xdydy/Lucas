@@ -56,10 +56,11 @@ class LocalOnceRuntime(Runtime):
         from ..durable import DurableWaitingResult
         if isinstance(result, DurableWaitingResult):
             result = result.waitResult()
+            next(result)
 
         return result
 
-    async def tell(self, fnName:str, fnParams: dict) -> Any:
+    def tell(self, fnName:str, fnParams: dict) -> Any:
         fnParams:TellParams = TellParams(**fnParams)
         event = fnParams.input
         if self._workflow_runner == None:
@@ -70,10 +71,10 @@ class LocalOnceRuntime(Runtime):
 
         print(f"[function tell] {callerName} -> {fnName}")
         print(f"[tell params] {event}")
-        async def task():
+        def task():
             handler = self._workflow_runner.route(fnName)
             nonlocal metadata
-            await handler(event, self._workflow_runner, metadata)
+            return handler(event, self._workflow_runner, metadata)
             # from faasit_runtime.durable import DurableWaitingResult
             # if isinstance(result, DurableWaitingResult):
             #     result = await result.waitResult()
@@ -88,8 +89,7 @@ class LocalOnceRuntime(Runtime):
             #     callbackMetadata = self.helperCollectMetadata("tell", callerName, callbackParams)
             #     result = await handler(result, self._workflow_runner, callbackMetadata)
             # return result
-        subtask = asyncio.create_task(task())
-        return subtask
+        return task
         # return task
     
     @property

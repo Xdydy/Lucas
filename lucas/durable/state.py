@@ -34,14 +34,14 @@ class ScopedDurableStateClient(DurableStateClient):
         self._scopedId = scopedId
         pass
 
-    async def set(self, key: str, value: Any) -> Awaitable[None]:
+    def set(self, key: str, value: Any) -> Awaitable[None]:
         key = self.build_key(key)
         self._state[key] = value
         pass
-    async def get(self, key: str) -> Union[Awaitable[Any],None]:
+    def get(self, key: str) -> Union[Awaitable[Any],None]:
         key = self.build_key(key)
         return self._state.get(key, None)
-    async def get(self, key: str, default: Callable) -> Awaitable[Any]:
+    def get(self, key: str, default: Callable) -> Awaitable[Any]:
         key = self.build_key(key)
         return self._state.get(key, default)
 
@@ -62,7 +62,7 @@ class DurableState(ABC):
         pass
 
     @staticmethod
-    async def load(client: DurableStateClient):
+    def load(client: DurableStateClient):
         return DurableState()
     
 class Action(BaseModel):
@@ -75,21 +75,21 @@ class DurableFunctionState(DurableState):
         super().__init__()
         self._actions: list[Action] = list()
     @staticmethod
-    async def load(client: ScopedDurableStateClient):
+    def load(client: ScopedDurableStateClient):
         state = DurableFunctionState()
-        isInitialized = await client.get("isInitialized", False)
+        isInitialized = client.get("isInitialized", False)
         if not isInitialized:
-            await client.set("isInitialized", True)
-            await client.set("isFinished", False)
-            await state.store(client)
+            client.set("isInitialized", True)
+            client.set("isFinished", False)
+            state.store(client)
 
             return (state, True)
         
-        state._actions = await client.get("actions", list())
+        state._actions = client.get("actions", list())
         return (state, False)
     
     @staticmethod
-    async def loads(key):
+    def loads(key):
         redis_client = redis.Redis(host='redis', port=6379, db=0)
         redis_value = redis_client.get(key)
         serializedState = json.loads(redis_value)
@@ -103,13 +103,13 @@ class DurableFunctionState(DurableState):
         state._actions = [Action(**action) for action in actions]
         return (state,client)
     
-    async def store(self, client: ScopedDurableStateClient):
-        await client.set('actions', self._actions)
+    def store(self, client: ScopedDurableStateClient):
+        client.set('actions', self._actions)
         pass
 
-    async def saveResult(self, client: ScopedDurableStateClient, result: CallResult):
-        await client.set('isFinished', True)
-        await client.set('result', result)
+    def saveResult(self, client: ScopedDurableStateClient, result: CallResult):
+        client.set('isFinished', True)
+        client.set('result', result)
 
 
     def add_action(self, action: Action):

@@ -1,14 +1,11 @@
-from .durable import durable
+from .durable import durable_helper
 
 from .runtime import (
     Runtime, 
     FaasitResult,
-    AliyunRuntime,
-    LocalOnceRuntime,
-    LocalRuntime,
-    KnativeRuntime,
     createRuntimeMetadata,
-    RuntimeMetadata
+    RuntimeMetadata,
+    load_runtime
 )
 from .utils import (
     get_function_container_config,
@@ -25,19 +22,22 @@ def transformfunction(fn: type_Function) -> type_Function:
     containerConf = get_function_container_config()
     match containerConf['provider']:
         case 'local':
-            async def local_function(event,metadata:RuntimeMetadata = None) -> FaasitResult:
+            def local_function(event,metadata:RuntimeMetadata = None) -> FaasitResult:
+                LocalRuntime = load_runtime('local')
                 frt = LocalRuntime(event,metadata)
-                return await fn(frt)
+                return fn(frt)
             return local_function
         case 'aliyun':
             def aliyun_function(arg0, arg1):
+                AliyunRuntime = load_runtime('aliyun')
                 frt = AliyunRuntime(arg0, arg1)
                 return fn(frt)
             return aliyun_function
         case 'knative':
-            async def kn_function(event) -> FaasitResult:
+            def kn_function(event) -> FaasitResult:
+                KnativeRuntime = load_runtime('knative')
                 frt = KnativeRuntime(event)
-                return await fn(frt)
+                return fn(frt)
             return kn_function
         case 'aws':
             frt = Runtime(containerConf)
@@ -46,14 +46,21 @@ def transformfunction(fn: type_Function) -> type_Function:
                                workflow_runner = None,
                                metadata: RuntimeMetadata = None
                                ):
+                LocalOnceRuntime = load_runtime('local-once')
                 frt = LocalOnceRuntime(event, workflow_runner, metadata)
                 result = fn(frt)
+                callback(result,frt)
                 return result
             return localonce_function
         case _:
             raise ValueError(f"Invalid provider {containerConf['provider']}")
 
 routeBuilder = RouteBuilder()
+
+def durable(fn):
+    new_func = durable_helper(fn)
+    routeBuilder.func(fn.__name__).set_handler(new_func)
+    return new_func
 
 def function(*args, **kwargs):
     # Read Config for different runtimes
@@ -98,6 +105,7 @@ def workflow(fn) -> Workflow:
         container_conf = get_function_container_config()
         match container_conf['provider']:
             case 'local-once':
+                LocalOnceRuntime = load_runtime('local-once')
                 frt = LocalOnceRuntime(
                     None, 
                     workflow_runner if workflow_runner else RouteRunner(route), 
@@ -128,6 +136,7 @@ def create_handler(fn_or_workflow : type_Function | Workflow):
             case 'aliyun':
                 def handler(args0, args1):
                     if container_conf['funcName'] == '__executor':
+                        AliyunRuntime = load_runtime('aliyun')
                         frt = AliyunRuntime(args0, args1)
                         workflow.setRuntime(frt)
                         return workflow.execute(frt.input())

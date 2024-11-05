@@ -21,7 +21,7 @@ def callback(result,frt:Runtime):
         result = frt.tell(lastInvocation.caller.funcName, callbackParams.dict())
         return result
     
-async def popStack(result, metadata: RuntimeMetadata):
+def popStack(result, metadata: RuntimeMetadata):
     if len(metadata.stack) == 0:
         return result
     lastInvocation = metadata.stack[-1]

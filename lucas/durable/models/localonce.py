@@ -1,6 +1,6 @@
 from lucas.runtime import (
-    LocalOnceRuntime,
-    RuntimeMetadata
+    RuntimeMetadata,
+    load_runtime
 )
 
 from ..state import (
@@ -43,9 +43,10 @@ def localonce_durable(fn):
         if scopeId not in localonceClients:
             localonceClients[scopeId] = ScopedDurableStateClient(scopeId)
         return localonceClients[scopeId]
-    async def handler(event: dict,
+    def handler(event: dict,
                       workflow_runner = None,
                       metadata = None):
+        LocalOnceRuntime = load_runtime('local-once')
         frt = LocalOnceRuntime(event,workflow_runner,metadata)
         frt_metadata: RuntimeMetadata = frt.metadata()
         # print(f"[Debug] {frt_metadata.dict()}")
@@ -80,28 +81,28 @@ def localonce_durable(fn):
         orchestratorMetadataId = orchestratorMetadata.id
         scopeId = createOrchestratorScopedId(orchestratorMetadataId)
         client = getClient(scopeId)
-        state, init = await DurableFunctionState.load(client)
+        state, init = DurableFunctionState.load(client)
 
         if callbackCtx is not None:
             result = frt.input()
             action = state._actions[callbackCtx.taskpc-1]
             action.status = 'completed'
             action.result = result
-            await state.store(client)
+            state.store(client)
 
         dfrt = DurableRuntime(frt,durableMetadata,state)
         
         try:
-            result = await fn(dfrt)
-            await state.saveResult(client,result)
-            await callback(result,frt)
+            result = fn(dfrt)
+            state.saveResult(client,result)
+            callback(result,frt)
             # await popStack(result,frt_metadata)
-            await localonceResults[orchestratorMetadataId].setResult(result)
+            localonceResults[orchestratorMetadataId].setResult(result)
             return result
         except DurableException as e:
             print(f"[Trace] {frt_metadata.funcName}::{orchestratorMetadataId} yield")
-            await state.store(client)
-            waitingResult = DurableWaitingResult()
+            state.store(client)
+            waitingResult = DurableWaitingResult(e.task)
             if localonceResults.get(orchestratorMetadataId) == None:
                 localonceResults[orchestratorMetadataId] = waitingResult
             return localonceResults[orchestratorMetadataId]
