@@ -62,14 +62,25 @@ def durable(fn):
     routeBuilder.func(fn.__name__).set_handler(new_func)
     return new_func
 
+class AbstractFunction:
+    def __init__(self, fn):
+        self.fn = fn
+    def func(self):
+        pass
+
 def function(*args, **kwargs):
     # Read Config for different runtimes
-    if kwargs.get('name') is not None:
-        fn_name = kwargs.get('name')
+    if len(kwargs) > 0:
+        fn_name = kwargs.get('name','unknown')
+        wrapper: AbstractFunction = kwargs.get('wrapper')
         def function(fn: type_Function) -> type_Function:
-            new_func = transformfunction(fn)
-            routeBuilder.func(fn_name).set_handler(new_func)
-            return new_func
+            if wrapper is None:
+                new_func = transformfunction(fn)
+                routeBuilder.func(fn_name).set_handler(new_func)
+                return new_func
+            else:
+                custom_func = wrapper(fn)
+                return custom_func.func()
 
         return function
     else:
@@ -162,4 +173,4 @@ def create_handler(fn_or_workflow : type_Function | Workflow):
                     return await fn_or_workflow(event, *args)
                 return handler
 
-__all__ = ["function","workflow","durable","create_handler",'recursive']
+__all__ = ["function","workflow","durable","create_handler",'recursive','AbstractFunction']
