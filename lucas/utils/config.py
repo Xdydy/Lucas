@@ -17,7 +17,7 @@ def get_function_container_config():
 
     config : FunctionContainerConfigSchema = FunctionContainerConfigSchema(
         funcName=env.get('FAASIT_FUNC_NAME') or '',
-        provider=env.get('FAASIT_PROVIDER'),
+        provider=env.get('FAASIT_PROVIDER','local-once'),
         workflow=WorkflowSchema(
             funcName=env.get('FAASIT_WORKFLOW_FUNC_NAME') or ''
         )

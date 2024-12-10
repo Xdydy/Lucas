@@ -65,22 +65,26 @@ def durable(fn):
 class AbstractFunction:
     def __init__(self, fn):
         self.fn = fn
+    def __call__(self, *args, **kwds):
+        return self.fn(*args, **kwds)
     def func(self):
         pass
 
 def function(*args, **kwargs):
     # Read Config for different runtimes
     if len(kwargs) > 0:
-        fn_name = kwargs.get('name','unknown')
         wrapper: AbstractFunction = kwargs.get('wrapper')
         def function(fn: type_Function) -> type_Function:
+            fn_name = kwargs.get('name', fn.__name__)
             if wrapper is None:
                 new_func = transformfunction(fn)
                 routeBuilder.func(fn_name).set_handler(new_func)
                 return new_func
             else:
                 custom_func = wrapper(fn)
-                return custom_func.func()
+                custom_func.func()
+                routeBuilder.func(fn_name).set_handler(custom_func)
+                return custom_func
 
         return function
     else:

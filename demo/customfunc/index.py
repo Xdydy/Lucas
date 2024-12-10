@@ -1,4 +1,4 @@
-from lucas import function,AbstractFunction
+from lucas import function,AbstractFunction,workflow,Workflow,create_handler
 
 class CustomFunc(AbstractFunction):
     def func(self):
@@ -9,3 +9,9 @@ class CustomFunc(AbstractFunction):
 def f():
     print("f")
     return 1
+
+@workflow
+def testF(wf:Workflow):
+    return wf.call('f',{})
+
+print(testF)
