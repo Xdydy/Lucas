@@ -7,8 +7,6 @@ class DAGNode:
     def __init__(self) -> None:
         self.done = False
         self.belong_dag:"DAG" = None
-        pass
-
 
 class ControlNode(DAGNode):
     def __init__(self, fn) -> None:
@@ -73,7 +71,7 @@ class DataNode(DAGNode):
     def __init__(self, ld: Lambda) -> None:
         super().__init__()
         self.ld = ld
-        self.ready = False
+        self.ready = ld.value != None
         self.succ_control_nodes = []
         self.is_end_node = False
         self.pre_control_node = None
@@ -180,7 +178,7 @@ class DAG:
             for data_node in node.get_pre_data_nodes():
                 self.add_node(data_node)
 
-    def get_nodes(self):
+    def get_nodes(self) -> list[DAGNode]:
         return self.nodes
 
     def __str__(self):
@@ -235,3 +233,44 @@ class DAG:
                 result = node.ld.value
                 break
         return result
+
+def duplicateDAG(dag:DAG):
+    new_dag = DAG(dag.workflow_)
+    dag.workflow_.dag = new_dag
+    nodes = dag.get_nodes()
+
+    node_map:dict[DAGNode,DAGNode] = {}
+    lambda_map:dict[Lambda,Lambda] = {}
+    for node in nodes:
+        if isinstance(node, DataNode):
+            new_lambda = Lambda(node.ld.value)
+            lambda_map[node.ld] = new_lambda
+            new_node = DataNode(new_lambda) 
+            new_node.belong_dag = new_dag
+            new_node.done = False
+            new_node.is_end_node = node.is_end_node
+            node_map[node] = new_node
+            new_dag.add_node(new_node)
+        elif isinstance(node, ControlNode):
+            new_node = ControlNode(node.fn)
+            new_node.belong_dag = new_dag
+            new_node.datas = node.datas
+            new_node.done = False
+            node_map[node] = new_node
+            new_dag.add_node(new_node)
+    
+    for node in nodes:
+        if isinstance(node, DataNode):
+            new_node:DataNode = node_map[node]
+            if node.get_pre_control_node() != None:
+                new_node.set_pre_control_node(node_map[node.get_pre_control_node()])
+            for ctl_node in node.get_succ_control_nodes():
+                new_node.add_succ_control_node(node_map[ctl_node])
+        elif isinstance(node,ControlNode):
+            new_node:ControlNode = node_map[node]
+            new_node.set_data_node(node_map[node.get_data_node()])
+            for data_node in node.get_pre_data_nodes():
+                new_node.add_pre_data_node(node_map[data_node])
+            for ld, key in node.ld_to_key.items():
+                new_node.defParams(lambda_map[ld], key)
+    return new_dag

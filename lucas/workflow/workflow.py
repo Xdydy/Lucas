@@ -3,7 +3,7 @@ from ..utils import get_function_container_config
 from .dag import DAG, ControlNode,DataNode
 from .ld import Lambda
 from ..runtime import Runtime
-
+from .executor import Executor
 from .route import Route,RouteRunner
 
 class WorkflowInput:
@@ -123,7 +123,8 @@ class Workflow:
                 data_node.set_value(ld.value)
             else:
                 raise ValueError(f"missing parameter {key}")
-        return self.dag.run()
+        executor = Executor(self.dag)
+        return executor.execute()
     def end_with(self,ld:Lambda):
         if not isinstance(ld, Lambda):
             ld = Lambda(ld)
