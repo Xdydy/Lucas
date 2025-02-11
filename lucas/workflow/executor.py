@@ -1,4 +1,5 @@
 from .dag import duplicateDAG,DAG,DataNode,ControlNode
+from lucas.utils.logging import log
 
 class Executor:
     def __init__(self, dag:DAG):
@@ -22,12 +23,12 @@ class Executor:
                 if isinstance(node, DataNode):
                     for control_node in node.get_succ_control_nodes():
                         control_node: ControlNode
-                        print(f"{control_node.describe()} appargs {node.ld.value}")
+                        log.info(f"{control_node.describe()} appargs {node.ld.value}")
                         if control_node.appargs(node.ld):
                             task.append(control_node)
                 elif isinstance(node, ControlNode):
                     r_node: DataNode = node.calculate()
-                    print(f"{node.describe()} calculate {r_node.describe()}")
+                    log.info(f"{node.describe()} calculate {r_node.describe()}")
                     if r_node.is_ready():
                         task.append(r_node)
         result = None

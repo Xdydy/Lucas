@@ -5,6 +5,7 @@ from .ld import Lambda
 from ..runtime import Runtime
 from .executor import Executor
 from .route import Route,RouteRunner
+from ..utils.logging import log
 
 class WorkflowInput:
     def __init__(self,workflow:"Workflow") -> None:
@@ -31,6 +32,11 @@ class Workflow:
         self.frt: Runtime = None
         self.name: str = name
         pass
+    def copy(self):
+        new_workflow = Workflow(self.route, self.name)
+        new_workflow.setRuntime(self.frt)
+        new_workflow.params = self.params.copy()
+        return new_workflow
 
     def setRuntime(self, frt: Runtime):
         self.frt = frt

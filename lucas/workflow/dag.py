@@ -1,5 +1,6 @@
 from typing import Any, List, Callable, TYPE_CHECKING
 from .ld import Lambda
+from lucas.utils.logging import log
 if TYPE_CHECKING:
     from .workflow import Workflow
 
@@ -71,7 +72,7 @@ class DataNode(DAGNode):
     def __init__(self, ld: Lambda) -> None:
         super().__init__()
         self.ld = ld
-        self.ready = ld.value != None
+        self.ready = ld.value is not None
         self.succ_control_nodes = []
         self.is_end_node = False
         self.pre_control_node = None
@@ -132,7 +133,7 @@ class DataNode(DAGNode):
         for child_node in self.child_node:
             if not child_node.is_ready():
                 return False
-        if self.ld.value == None:
+        if self.ld.value is None:
             return False
         return True
     def set_ready(self):
@@ -235,8 +236,9 @@ class DAG:
         return result
 
 def duplicateDAG(dag:DAG):
-    new_dag = DAG(dag.workflow_)
-    dag.workflow_.dag = new_dag
+    new_workflow = dag.workflow_.copy()
+    new_dag = DAG(new_workflow)
+    new_workflow.dag = new_dag
     nodes = dag.get_nodes()
 
     node_map:dict[DAGNode,DAGNode] = {}
