@@ -1,0 +1,24 @@
+{
+    "appname": "wordcount",
+    "functions": [
+        {
+            "name": "split",
+            "path": "./split.py"
+        },
+        {
+            "name": "count",
+            "path": "./count.py"
+        },
+        {
+            "name": "sort",
+            "path": "./sort.py"
+        },
+        {
+            "name": "wordcount",
+            "path": "./wordcount.py"
+        }
+    ],
+    "inputs": {
+        "text": "hello world this is a happy day"
+    }
+}

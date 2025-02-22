@@ -119,7 +119,7 @@ class Workflow:
         """
         return ld.becatch(self)
     
-    def execute(self,event:dict):
+    def execute(self,event:dict, executor_cls=None):
         for key, ld in self.params.items():
             if event.get(key) != None:
                 data_node = ld.getDataNode()
@@ -129,7 +129,10 @@ class Workflow:
                 data_node.set_value(ld.value)
             else:
                 raise ValueError(f"missing parameter {key}")
-        executor = Executor(self.dag)
+        if executor_cls==None:
+            executor = Executor(self.dag)
+        else:
+            executor = executor_cls(self.dag)
         return executor.execute()
     def end_with(self,ld:Lambda):
         if not isinstance(ld, Lambda):

@@ -1,0 +1,170 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: split
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+      - args:
+        - -m
+        - lucas.worker
+        - --lambda_file
+        - /code/split.py
+        - --function_name
+        - handler
+        - --server_port
+        - '9000'
+        command:
+        - python
+        image: 192.168.28.220:5000/library/wordcount-split:tmp
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9000
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 9000
+          initialDelaySeconds: 1
+          periodSeconds: 3
+          successThreshold: 1
+          timeoutSeconds: 1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: false
+          seccompProfile:
+            type: RuntimeDefault
+
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: count
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+      - args:
+        - -m
+        - lucas.worker
+        - --lambda_file
+        - /code/count.py
+        - --function_name
+        - handler
+        - --server_port
+        - '9000'
+        command:
+        - python
+        image: 192.168.28.220:5000/library/wordcount-count:tmp
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9000
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 9000
+          initialDelaySeconds: 1
+          periodSeconds: 3
+          successThreshold: 1
+          timeoutSeconds: 1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: false
+          seccompProfile:
+            type: RuntimeDefault
+
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: sort
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+      - args:
+        - -m
+        - lucas.worker
+        - --lambda_file
+        - /code/sort.py
+        - --function_name
+        - handler
+        - --server_port
+        - '9000'
+        command:
+        - python
+        image: 192.168.28.220:5000/library/wordcount-sort:tmp
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9000
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 9000
+          initialDelaySeconds: 1
+          periodSeconds: 3
+          successThreshold: 1
+          timeoutSeconds: 1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: false
+          seccompProfile:
+            type: RuntimeDefault
+
+---
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: wordcount
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+      - args:
+        - -m
+        - lucas.worker
+        - --lambda_file
+        - /code/wordcount.py
+        - --function_name
+        - handler
+        - --server_port
+        - '9000'
+        command:
+        - python
+        image: 192.168.28.220:5000/library/wordcount-wordcount:tmp
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 9000
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health
+            port: 9000
+          initialDelaySeconds: 1
+          periodSeconds: 3
+          successThreshold: 1
+          timeoutSeconds: 1
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: false
+          seccompProfile:
+            type: RuntimeDefault

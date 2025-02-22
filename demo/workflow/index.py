@@ -6,6 +6,7 @@ import time
 
 @function
 def count(frt: Runtime):
+    time.sleep(1)
     _in = frt.input()
     words = _in["words"]
     
@@ -21,6 +22,7 @@ def count(frt: Runtime):
 
 @function
 def sort(frt: Runtime):
+    time.sleep(1)
     _in = frt.input()
     counterArray = _in["counter"]
 
@@ -39,6 +41,7 @@ def sort(frt: Runtime):
 
 @function
 def split(frt: Runtime):
+    time.sleep(1)
     _in = frt.input()
     text: str = _in["text"]
 

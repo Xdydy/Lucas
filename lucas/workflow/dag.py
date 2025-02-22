@@ -1,6 +1,7 @@
 from typing import Any, List, Callable, TYPE_CHECKING
 from .ld import Lambda
 from lucas.utils.logging import log
+import threading
 if TYPE_CHECKING:
     from .workflow import Workflow
 
@@ -78,6 +79,7 @@ class DataNode(DAGNode):
         self.pre_control_node = None
         self.parent_node:"DataNode" = None
         self.child_node:list["DataNode"] = []
+        self._lock = threading.Lock()
         ld.setDataNode(self)
 
     def set_parent_node(self, node:"DataNode"):
@@ -141,7 +143,8 @@ class DataNode(DAGNode):
     def apply(self):
         if self.ld.canIter:
             for i in range(len(self.ld.value)):
-                self.ld.value[i] = self.ld.value[i].value
+                if isinstance(self.ld.value[i], Lambda):
+                    self.ld.value[i] = self.ld.value[i].value
         else:
             self.ld.value = self.ld.value.value
     
@@ -236,7 +239,8 @@ class DAG:
         return result
 
 def duplicateDAG(dag:DAG):
-    new_workflow = dag.workflow_.copy()
+    # new_workflow = dag.workflow_.copy()
+    new_workflow = dag.workflow_
     new_dag = DAG(new_workflow)
     new_workflow.dag = new_dag
     nodes = dag.get_nodes()

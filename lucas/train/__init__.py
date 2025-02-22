@@ -13,6 +13,37 @@ class MSELoss(LossFunc):
     def derivative(self,y_true, y_pred):
         return (y_pred - y_true) / y_true.size
 
+class Tensor:
+    def __init__(self, data):
+        self._data = data
+        self._grad = 0
+        self._backward_fn = None
+
+    def update(self, grad=0):
+        self._grad += grad
+        return self._grad
+
+    def get(self):
+        return self._data
+
+    def __add__(self, other:"Tensor"):
+        tensor = Tensor(self.get() + other.get())
+        def add_backward():
+            self.update(1)
+            other.update(1)
+        tensor._backward_fn = add_backward
+        return tensor
+
+    def __mul__(self, other:"Tensor"):
+        tensor = Tensor(self.get() * other.get())
+        def mul_backward():
+            self.update(other.get())
+            other.update(self.get())
+        tensor._backward_fn = mul_backward
+        return tensor
+
+    def no_grad(self):
+        self._grad = 0
 
 class TrainContext:
     def __enter__(self):
