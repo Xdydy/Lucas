@@ -3,6 +3,7 @@ import os
 import json
 import argparse
 from packaging import version
+from .clean import move_file_to_lucas_dir
 
 
 def get_latest_version(image_name):
@@ -74,3 +75,8 @@ if __name__ == '__main__':
         print(f"Pushing image: {registry}/library/{function_image}")
         for line in client.images.push(f"{registry}/library/{function_image}", stream=True):
             print(line.decode('utf-8').strip())
+
+        # clean up
+        for f in os.listdir('.'):
+            if f.endswith('.dockerfile'):
+                move_file_to_lucas_dir(f)

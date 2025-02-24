@@ -1,0 +1,30 @@
+{
+    "appname": "wordcount",
+    "functions": [
+        {
+            "name": "split",
+            "path": "./split.py"
+        },
+        {
+            "name": "mapper",
+            "path": "./mapper.py"
+        },
+        {
+            "name": "reducer",
+            "path": "./reducer.py"
+        },
+        {
+            "name": "wordcount",
+            "path": "./wordcount.py"
+        },
+        {
+            "name": "baseline",
+            "path": "./baseline.py"
+        }
+    ],
+    "inputs": {
+        "split_num": 20,
+        "data_file": "data.txt"
+    },
+    "data": "./data"
+}

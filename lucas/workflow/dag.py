@@ -18,6 +18,14 @@ class ControlNode(DAGNode):
         self.ld_to_key: dict[Lambda, str] = {}
         self.datas = {}
         self.data_node = None
+        self._init_state = {
+            "done": False,
+            "fn": fn,
+            "pre_data_nodes": [],
+            "ld_to_key": {},
+            "datas": {},
+            "data_node": None
+        }
 
     def add_pre_data_node(self, data_node: DAGNode):
         self.pre_data_nodes.append(data_node)
@@ -67,6 +75,13 @@ class ControlNode(DAGNode):
     def __str__(self) -> str:
         res = f"(ControlNode {super().__str__()}) {self.fn.__name__}"
         return res
+
+    def reset(self):
+        self.fn = self._init_state["fn"]
+        self.pre_data_nodes = self._init_state["pre_data_nodes"]
+        self.ld_to_key = self._init_state["ld_to_key"]
+        self.datas = self._init_state["datas"]
+        self.data_node = self._init_state["data_node"]
 
 
 class DataNode(DAGNode):

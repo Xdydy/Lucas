@@ -1,4 +1,5 @@
 from kubernetes import client, config
+import os
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +20,11 @@ def delete_all_ksvc():
             logging.info(f"Deleted ksvc {name}")
     except Exception as e:
         logging.error(f"Failed to delete ksvc: {e}")
+
+def move_file_to_lucas_dir(filename):
+    if not os.path.exists('.lucas'):
+        os.mkdir('.lucas')
+    os.rename(filename, f'.lucas/{filename}')
 
 if __name__ == '__main__':
     delete_all_ksvc()

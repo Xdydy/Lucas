@@ -1,6 +1,6 @@
 import redis
 import pickle
-import logging
+from lucas.utils.logging import log as logging
 
 class RedisDB:
     def __init__(self, host: str, port: int):
@@ -13,19 +13,20 @@ class RedisDB:
         if r.set(key, value) is not True:
             logging.error(f"Failed to set key {key}")
             return False
-        logging.debug(f"Set key {key} succeed")
+        logging.info(f"Set key {key} succeed")
+        return True
     def get(self, key: str):
         r = redis.Redis(connection_pool=self._pool)
         value = r.get(key)
         if value is None:
             logging.error(f"Failed to get key {key}")
             return None
-        logging.debug(f"Get key {key} succeed")
+        logging.info(f"Get key {key} succeed")
         return pickle.loads(value)
     def delete(self, key: str):
         r = redis.Redis(connection_pool=self._pool)
         if r.delete(key) == 0:
             logging.error(f"Failed to delete key {key}")
             return False
-        logging.debug(f"Delete key {key} succeed")
+        logging.info(f"Delete key {key} succeed")
         return True

@@ -11,7 +11,7 @@ from .utils import (
     get_function_container_config,
     callback,
 )
-from .workflow import Workflow,Route,RouteBuilder,RouteRunner
+from .workflow import Workflow,Route,RouteBuilder,RouteRunner,WorkflowContext
 from typing import Callable, Set, Any
 import asyncio
 import inspect
@@ -110,27 +110,16 @@ def function(*args, **kwargs):
             return fn
         
 
-def workflow(fn) -> Workflow:
+def workflow(fn) -> WorkflowContext:
     route = routeBuilder.build()
-    def generate_workflow(
-            workflow_runner: RouteRunner = None, 
-            metadata = None) -> Workflow:
+    def generate_workflow(rt: Runtime) -> Workflow:
         wf = Workflow(route,fn.__name__)
+        wf.setRuntime(rt)
         r  = fn(wf)
         wf.end_with(r)
-        container_conf = get_function_container_config()
-        provider = container_conf['provider']
-        if provider == 'local-once':
-            LocalOnceRuntime = load_runtime('local-once')
-            frt = LocalOnceRuntime(
-                None, 
-                workflow_runner if workflow_runner else RouteRunner(route), 
-                metadata if metadata else createRuntimeMetadata(fn.__name__)
-            )
-            wf.setRuntime(frt)
         return wf
     routeBuilder.workflow(fn.__name__).set_workflow(generate_workflow)
-    return generate_workflow()
+    return WorkflowContext(generate_workflow)
 
 def recursive(fn):
     def Y(f):
@@ -141,8 +130,8 @@ def recursive(fn):
 
 def create_handler(fn_or_workflow : type_Function | Workflow):
     container_conf = get_function_container_config()
-    if isinstance(fn_or_workflow, Workflow):
-        workflow = fn_or_workflow
+    if isinstance(fn_or_workflow, WorkflowContext):
+        workflow_ctx = fn_or_workflow
         provider = container_conf['provider']
         if provider == 'local':
             async def handler(event:dict, metadata=None):...
@@ -163,7 +152,7 @@ def create_handler(fn_or_workflow : type_Function | Workflow):
             return handler
         elif provider == 'local-once':
             def handler(event: dict, executor=None):
-                result = workflow.execute(event,executor)
+                result = workflow_ctx.execute(executor)
                 return result
             return handler
         elif provider == 'knative':
@@ -172,8 +161,10 @@ def create_handler(fn_or_workflow : type_Function | Workflow):
             from .workflow.executor import MulThreadExecutor
             def handler(metadata: Metadata):
                 rt = KnativeRuntime(metadata)
-                workflow.setRuntime(rt)
-                return workflow.execute(rt.input(), MulThreadExecutor)
+                workflow_ctx.set_runtime(rt)
+                workflow = workflow_ctx.generate()
+                
+                return workflow.execute(MulThreadExecutor)
         return handler
     else: #type(fn) == type_Function:
         def handler(event: dict, *args):

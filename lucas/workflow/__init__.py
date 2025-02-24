@@ -1,6 +1,7 @@
 from .workflow import Workflow
 from .ld import Lambda
 from .route import RouteFunc, Route, RouteBuilder, RouteRunner
+from .context import WorkflowContext
 
 __all__ = [
     "Workflow",
@@ -8,5 +9,6 @@ __all__ = [
     "RouteFunc",
     "Route",
     "RouteBuilder",
-    "RouteRunner"
+    "RouteRunner",
+    "WorkflowContext"
 ]

@@ -1,4 +1,4 @@
-from typing import Callable,Dict,TYPE_CHECKING
+from typing import Callable,Dict,TYPE_CHECKING,Any
 from ..utils import get_function_container_config
 from .dag import DAG, ControlNode,DataNode
 from .ld import Lambda
@@ -27,7 +27,7 @@ class WorkflowInput:
 class Workflow:
     def __init__(self,route:Route = None, name:str= None) -> None:
         self.route = route
-        self.params:Dict[str,Lambda] = {}
+        self.params:Dict[str,Any] = {}
         self.dag = DAG(self)
         self.frt: Runtime = None
         self.name: str = name
@@ -65,8 +65,8 @@ class Workflow:
             return fn(*args,**kwargs)
         return functionCall
 
-    def getEvent(self) -> WorkflowInput:
-        return WorkflowInput(self)
+    def input(self) -> dict:
+        return self.frt.input()
     
     def build_function_param_dag(self,fn_ctl_node:ControlNode,key,ld:Lambda):
         if not isinstance(ld, Lambda):
@@ -119,16 +119,7 @@ class Workflow:
         """
         return ld.becatch(self)
     
-    def execute(self,event:dict, executor_cls=None):
-        for key, ld in self.params.items():
-            if event.get(key) != None:
-                data_node = ld.getDataNode()
-                data_node.set_value(event[key])
-            elif ld.value != None:
-                data_node = ld.getDataNode()
-                data_node.set_value(ld.value)
-            else:
-                raise ValueError(f"missing parameter {key}")
+    def execute(self, executor_cls=None):
         if executor_cls==None:
             executor = Executor(self.dag)
         else:

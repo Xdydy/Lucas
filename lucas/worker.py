@@ -19,6 +19,7 @@ import argparse
 import logging
 from flask import Flask, request, jsonify, make_response
 
+from .utils.logging import log as logger
 from .storage import RedisDB
 from .serverless_function import Metadata
 
@@ -33,14 +34,6 @@ redis_port = int(os.getenv('REDIS_PORT', 6379))
 redis_proxy = RedisDB(host=redis_host, port=redis_port)
 
 
-# logging
-logger = logging.getLogger("lucas")
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setLevel(logging.INFO)
-formatter = logging.Formatter('[%(asctime)s] %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
 
 #flask
 app = Flask(__name__)

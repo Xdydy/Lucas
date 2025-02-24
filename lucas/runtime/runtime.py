@@ -110,7 +110,7 @@ class Runtime(ABC):
 
     @property
     def storage(self) -> StorageMethods:
-        pass
+        return self._storage
 
     async def waitResults(self, tasks: list[Awaitable[CallResult]]):
         results = []

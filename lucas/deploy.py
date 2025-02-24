@@ -2,6 +2,7 @@ import json
 import argparse
 import yaml
 import os
+from .clean import move_file_to_lucas_dir
 
 def generate_kn_obj(registry, funcname, appname):
     if appname == 'default':
@@ -18,6 +19,7 @@ def generate_kn_obj(registry, funcname, appname):
         'spec': {
             'template': {
                 'spec': {
+                    'containerConcurrency': 5,
                     'containers': [
                         {
                             'image': f'{registry}/library/{images_name}:tmp',
@@ -77,4 +79,5 @@ if __name__ == '__main__':
 
     os.system(f'kubectl apply -f {app_name}.yaml')
     
-
+    # clean up
+    move_file_to_lucas_dir(f'{app_name}.yaml')

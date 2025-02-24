@@ -1,13 +1,13 @@
 import argparse
 import requests
-from .serverless_function import Metadata
 import uuid
 import json
-import logging
 import time
+import os
 from kubernetes import config, client
+from lucas.storage import RedisDB
+from lucas.utils.logging import log as logging
 
-logging.basicConfig(level=logging.INFO)
 
 def clean_redis():
     try:
@@ -19,10 +19,16 @@ def clean_redis():
 
         v1.delete_namespaced_pod(name=pod_name, namespace=namespace)
         logging.info(f"Deleted pod {pod_name}")
-
+    except Exception as e:
+        logging.info(f"redis pod has been removed")
+    
+    try:
         service_name = 'redis-service'
         v1.delete_namespaced_service(name=service_name, namespace=namespace)
+    except Exception as e:
+        logging.info(f"redis service has been removed")
 
+    try:
         # wait for service to be deleted
         while True:
             try:
@@ -104,14 +110,49 @@ def load_redis():
         }
 
         v1.create_namespaced_service(namespace=namespace, body=service_manifest)
+        time.sleep(2)
+        while True:
+            resp = v1.read_namespaced_service(name=service_name, namespace=namespace)
+            if resp.spec.external_i_ps is not None:
+                break
+            time.sleep(1)
         logging.info(f"Created service {service_name}")
     except Exception as e:
         logging.error(f"Failed to load kubernetes config: {e}")
         exit(1)
 
+def is_ksvc_ready(service_name):
+    try:
+        config.load_kube_config()
+        api = client.CustomObjectsApi()
+
+        group = "serving.knative.dev"
+        version = "v1"
+        namespace = "default"
+        plural = "services"
+
+        ksvc = api.get_namespaced_custom_object(group, version, namespace, plural, service_name)
+        status = ksvc.get('status', {})
+        conditions = status.get('conditions', [])
+        for condition in conditions:
+            if condition.get('type') == 'Ready' and condition.get('status') == 'True':
+                return True
+        return False
+    except Exception as e:
+        logging.error(f"Failed to load kubernetes config: {e}")
+        return False
+
+def load_data(dirpath):
+    logging.info(f"Loading data from {dirpath}")
+    redis_host = '10.0.0.100'
+    redis_port = 6379
+    redis_proxy = RedisDB(host=redis_host, port=redis_port)
+    for f in os.listdir(dirpath):
+        with open(os.path.join(dirpath, f), 'r') as file:
+            redis_proxy.set(file.name.split('/')[-1], file.read())
+
 if __name__ == "__main__":
     clean_redis()
-    load_redis()
     parser = argparse.ArgumentParser(description='invoke function')
     parser.add_argument('--function', type=str, help='function to invoke', required=True)
     parser.add_argument('--file', type=str, help='json file for invoke', default='config.json')
@@ -123,19 +164,31 @@ if __name__ == "__main__":
     router = {}
     type = 'invoke'
     with open(args.file, 'r') as f:
-        config = json.load(f)
+        app_config = json.load(f)
     try:
-        invoke_config = config['inputs']
+        invoke_config = app_config['inputs']
         params = invoke_config
     except KeyError as e:
         print(f"Failed to load invoke config: {e}")
         exit(1)
+
+    # load data
+    redis_data = app_config.get('data', None)
+    if redis_data is not None:
+        load_redis()
+        load_data(redis_data)
     
-    functions = config['functions']
-    namespace = config.get('appname', 'default')
+    functions = app_config['functions']
+    namespace = app_config.get('appname', 'default')
     for function in functions:
         funcname = function['name']
         router[funcname] = f"http://{funcname}.default.10.0.0.233.sslip.io"
+
+    # wait all the router to be ready
+    for funcname in router.keys():
+        while not is_ksvc_ready(funcname):
+            logging.info(f"Waiting for {funcname} to be ready")
+            time.sleep(0.5)
 
     
     _metadata = {
@@ -146,12 +199,17 @@ if __name__ == "__main__":
         'type': type
     }
     logging.info(f"Invoking function {args.function} with metadata {_metadata}")
+
+    start_time = time.time()
     response = requests.post(router[args.function], json=_metadata, headers={'Content-Type': 'application/json'}, proxies={'http': None, 'https': None})
+    end_time = time.time()
+
     
     if response.status_code != 200:
         logging.error(f"Failed to invoke function {args.function}: {response.text}")
         exit(1)
     logging.info(f"Function {args.function} invoked successfully")
     logging.info(f"Response: {response.json()}")
+    logging.info(f"Time elapsed: {end_time - start_time} s")
 
     

@@ -35,7 +35,7 @@ class Lambda:
                 return wrapper
             else:
                 return attr
-        return generate_subgraph(method_fn, [self,method_name])
+        return generate_subgraph(self.workflow_, method_fn, [self,method_name])
 
 
     def checkWorkflow(fn):
