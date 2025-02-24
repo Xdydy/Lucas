@@ -17,8 +17,12 @@ def baseline(rt: Runtime):
         timeresults[f"mapper-{i}"] = result['time']
 
     finalresults['map'] = timeresults
-    result = rt.call('reducer', {'split_num': split_num})
-    finalresults['reduce'] = result['time']
+    result1 = rt.call('reducer', {'start': 0, 'end': split_num//2})
+    result2 = rt.call('reducer', {'start': split_num//2, 'end': split_num})
+    finalresults['reduce'] = {
+        'reducer1': result1['time'],
+        'reducer2': result2['time']
+    }
 
     return rt.output(finalresults)
 

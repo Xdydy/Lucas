@@ -4,10 +4,11 @@ import time
 def reducer(rt: Runtime):
     start_time = time.time()
     _input = rt.input()
-    split_num = _input.get('split_num')
+    _start = _input.get("start")
+    _end = _input.get("end")
     store = rt.storage
     word_counts = {}
-    for i in range(split_num):
+    for i in range(_start, _end):
         key = f'word_counts_{i}'
         word_count = store.get(key)
         for word in word_count:

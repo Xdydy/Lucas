@@ -20,9 +20,28 @@ def wordcount(wf:Workflow):
         # timeresults[f"mapper-{i}"] = result['time']
         dependency[f'word_counts_words_{i}'] = result
 
+    def get_time(*args):
+        times = []
+        for a in args:
+            times.append(a['time'])
+        return times
+    mapper_times = wf.func(get_time, *results)
 
-    result = wf.call('reducer', {**dependency, 'split_num': split_num})
+    result1 = wf.call('reducer', {**dependency, 'start': 0, 'end': split_num//2})
+    result2 = wf.call('reducer', {**dependency, 'start': split_num//2, 'end': split_num})
 
-    return result['time']
+    reduce_times = wf.func(get_time, result1, result2)
+
+    def get_total_time(split_time, mapper_times, reduce_times):
+        return {
+            'split': split_time,
+            'map': mapper_times,
+            'reduce': reduce_times
+        }
+    
+    final_result = wf.func(get_total_time, split_resp['time'], mapper_times, reduce_times)
+
+
+    return final_result
 
 handler = create_handler(wordcount)

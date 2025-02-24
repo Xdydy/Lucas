@@ -24,7 +24,7 @@
     ],
     "inputs": {
         "split_num": 20,
-        "data_file": "data.txt"
+        "data_file": "data_20MB.txt"
     },
     "data": "./data"
 }

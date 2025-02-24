@@ -71,7 +71,9 @@ def load_redis():
                     {
                         "name": container_name,
                         "image": "redis",
-                        'imagePullPolicy': 'IfNotPresent'
+                        'imagePullPolicy': 'IfNotPresent',
+                        'command': ['redis-server'],
+                        'args': ['--io-threads-do-reads', 'yes', '--io-threads', '6'],
                     }
                 ]
             }
