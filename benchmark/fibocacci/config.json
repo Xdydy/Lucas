@@ -1,0 +1,16 @@
+{
+    "appname": "fibonacci",
+    "functions": [
+        {
+            "name": "fibonacci",
+            "path": "./fib.py"
+        },
+        {
+            "name": "baseline",
+            "path": "./baseline.py"
+        }
+    ],
+    "inputs": {
+        "n": 16
+    }
+}

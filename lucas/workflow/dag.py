@@ -11,8 +11,9 @@ class DAGNode:
         self.belong_dag:"DAG" = None
 
 class ControlNode(DAGNode):
-    def __init__(self, fn) -> None:
+    def __init__(self, fn, name:str) -> None:
         super().__init__()
+        self._fn_name = name
         self.fn = fn
         self.pre_data_nodes = []
         self.ld_to_key: dict[Lambda, str] = {}
@@ -24,7 +25,8 @@ class ControlNode(DAGNode):
             "pre_data_nodes": [],
             "ld_to_key": {},
             "datas": {},
-            "data_node": None
+            "data_node": None,
+            'fn_name': name
         }
 
     def add_pre_data_node(self, data_node: DAGNode):
@@ -66,7 +68,7 @@ class ControlNode(DAGNode):
         return self.get_data_node()
     
     def describe(self) -> str:
-        res = f"fn ("
+        res = f"{self._fn_name} ("
         for key,value in self.ld_to_key.items():
             res += f"{value},"
         res = res + ")"
@@ -273,7 +275,7 @@ def duplicateDAG(dag:DAG):
             node_map[node] = new_node
             new_dag.add_node(new_node)
         elif isinstance(node, ControlNode):
-            new_node = ControlNode(node.fn)
+            new_node = ControlNode(node.fn, node._fn_name)
             new_node.belong_dag = new_dag
             new_node.datas = node.datas
             new_node.done = False

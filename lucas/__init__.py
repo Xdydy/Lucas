@@ -110,16 +110,27 @@ def function(*args, **kwargs):
             return fn
         
 
-def workflow(fn) -> WorkflowContext:
-    route = routeBuilder.build()
-    def generate_workflow(rt: Runtime) -> Workflow:
-        wf = Workflow(route,fn.__name__)
-        wf.setRuntime(rt)
-        r  = fn(wf)
-        wf.end_with(r)
-        return wf
-    routeBuilder.workflow(fn.__name__).set_workflow(generate_workflow)
-    return WorkflowContext(generate_workflow)
+def workflow(*args, **kwargs) -> WorkflowContext:
+    def __workflow(fn) -> Workflow:
+        executor_cls = kwargs.get('executor')
+        route = routeBuilder.build()
+        def generate_workflow(rt: Runtime) -> Workflow:
+            wf = Workflow(route,fn.__name__)
+            if executor_cls != None:
+                wf.setExecutor(executor_cls)
+            wf.setRuntime(rt)
+            r  = fn(wf)
+            wf.end_with(r)
+            return wf
+        routeBuilder.workflow(fn.__name__).set_workflow(generate_workflow)
+        return WorkflowContext(generate_workflow)
+
+    if len(args) == 1 and len(kwargs) == 0:
+        fn = args[0]
+        return __workflow(fn)
+    else:
+        return __workflow
+
 
 def recursive(fn):
     def Y(f):
@@ -158,13 +169,12 @@ def create_handler(fn_or_workflow : type_Function | Workflow):
         elif provider == 'knative':
             from .serverless_function import Metadata
             from .runtime.kn_runtime import KnativeRuntime
-            from .workflow.executor import MulThreadExecutor
             def handler(metadata: Metadata):
                 rt = KnativeRuntime(metadata)
                 workflow_ctx.set_runtime(rt)
                 workflow = workflow_ctx.generate()
                 
-                return workflow.execute(MulThreadExecutor)
+                return workflow.execute()
         return handler
     else: #type(fn) == type_Function:
         def handler(event: dict, *args):

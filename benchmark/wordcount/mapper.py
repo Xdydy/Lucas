@@ -18,10 +18,10 @@ def mapper(rt: Runtime):
             word_counts[word] = 1
     
     store.put(f'word_counts_{taskno}', word_counts)
-
+    time.sleep(0.5)
     end_time = time.time()
     return rt.output({
-        'task': taskno,
+        'output': f"word_counts_{taskno}",
         'time': end_time - start_time
     })
 

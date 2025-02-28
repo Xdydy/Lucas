@@ -31,6 +31,7 @@ class Workflow:
         self.dag = DAG(self)
         self.frt: Runtime = None
         self.name: str = name
+        self._executor_cls:Executor = None
         pass
     def copy(self):
         new_workflow = Workflow(self.route, self.name)
@@ -43,6 +44,8 @@ class Workflow:
     def getRuntime(self):
         return self.frt
 
+    def setExecutor(self,executor_cls:Executor):
+        self._executor_cls = executor_cls
 
     def invokeHelper(self,fn_name):
         def invoke_fn(event:Dict):
@@ -91,7 +94,7 @@ class Workflow:
         for the remote code support
         """
         invoke_fn = self.invokeHelper(fn_name)
-        fn_ctl_node = ControlNode(invoke_fn)
+        fn_ctl_node = ControlNode(invoke_fn, fn_name)
         self.dag.add_node(fn_ctl_node)
         for key, ld in fn_params.items():
             self.build_function_param_dag(fn_ctl_node,key,ld)
@@ -103,7 +106,7 @@ class Workflow:
         """
         for the local code support
         """
-        fn_ctl_node = ControlNode(Workflow.funcHelper(fn))
+        fn_ctl_node = ControlNode(Workflow.funcHelper(fn), fn.__name__)
         self.dag.add_node(fn_ctl_node)
         for index,ld in enumerate(args):
             self.build_function_param_dag(fn_ctl_node,index,ld)
@@ -119,11 +122,11 @@ class Workflow:
         """
         return ld.becatch(self)
     
-    def execute(self, executor_cls=None):
-        if executor_cls==None:
+    def execute(self):
+        if self._executor_cls==None:
             executor = Executor(self.dag)
         else:
-            executor = executor_cls(self.dag)
+            executor = self._executor_cls(self.dag)
         return executor.execute()
     def end_with(self,ld:Lambda):
         if not isinstance(ld, Lambda):

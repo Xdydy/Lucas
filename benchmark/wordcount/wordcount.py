@@ -1,7 +1,7 @@
 from lucas import workflow, Workflow, create_handler
-from lucas.workflow import Lambda
+from lucas.workflow.executor import MulThreadExecutor
 
-@workflow
+@workflow(executor=MulThreadExecutor)
 def wordcount(wf:Workflow):
     _in = wf.input()
     split_num = _in.get('split_num', 20)
@@ -18,30 +18,25 @@ def wordcount(wf:Workflow):
     dependency = {}
     for i,result in enumerate(results):
         # timeresults[f"mapper-{i}"] = result['time']
-        dependency[f'word_counts_words_{i}'] = result
-
-    def get_time(*args):
-        times = []
-        for a in args:
-            times.append(a['time'])
-        return times
-    mapper_times = wf.func(get_time, *results)
-
-    result1 = wf.call('reducer', {**dependency, 'start': 0, 'end': split_num//2})
-    result2 = wf.call('reducer', {**dependency, 'start': split_num//2, 'end': split_num})
-
-    reduce_times = wf.func(get_time, result1, result2)
-
-    def get_total_time(split_time, mapper_times, reduce_times):
-        return {
-            'split': split_time,
-            'map': mapper_times,
-            'reduce': reduce_times
-        }
-    
-    final_result = wf.func(get_total_time, split_resp['time'], mapper_times, reduce_times)
+        dependency[f'reducer_{i}'] = result
 
 
-    return final_result
+    def reducer(**kwargs):
+        def solve(start, end):
+            if start == end:
+                return kwargs[f'reducer_{start}']['output']
+            mid = (start + end) // 2
+            result1 = solve(start, mid)
+            result2 = solve(mid+1, end)
+            depend = {}
+            depend['reducer_0'] = result1
+            depend['reducer_1'] = result2
+            result =  wf.frt.call('reducer', {**depend})
+            return result['output']
+        return solve(0,split_num-1)
+    result = wf.func(reducer, **dependency)
+
+
+    return result
 
 handler = create_handler(wordcount)

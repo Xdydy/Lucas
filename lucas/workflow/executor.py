@@ -41,16 +41,16 @@ class Executor:
         return result
     
 class LucasThread(Thread):
-    def __init__(self, target, *args):
+    def __init__(self, node: ControlNode, *args):
         Thread.__init__(self)
-        self.target = target
+        self.node = node
         self.args = args
         self.result = None
         self.error = None
     def run(self):
         try:
-            self.result = self.target()
-            log.info(f"Thread {self} finished, result: {self.result}")
+            self.result = self.node.calculate()
+            log.info(f"{self.node.describe()} calculate {self.result.describe()}")
         except Exception as e:
             self.error = e
             log.error(f"Error in thread: {e}")
@@ -58,7 +58,7 @@ class MulThreadExecutor:
     def __init__(self, dag:DAG):
         self.dag = duplicateDAG(dag)
     def launch(self, node:ControlNode):
-        task = LucasThread(node.calculate)
+        task = LucasThread(node)
         task.start()
         return task
     def execute(self):
@@ -79,8 +79,8 @@ class MulThreadExecutor:
                 while len(tasks) == 0 and len(pending) != 0:
                     try:
                         task = pending.pop(0)
-                        log.info(f"Task {task} is alive: {task.is_alive()}")
                         if task.is_alive():
+                            log.info(f"Task {task} is alive")
                             pending.append(task)
                             time.sleep(0.1)
                             continue

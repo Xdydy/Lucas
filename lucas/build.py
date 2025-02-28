@@ -55,7 +55,7 @@ if __name__ == '__main__':
         def generate_docker_file():
             with open(f'{function_image}.dockerfile', 'w') as f:
                 f.write(f"FROM {base_image}\n")
-                f.write(f"COPY {function_path} /code\n")
+                f.write(f"COPY {function_path} /code/{function_name}.py\n")
                 f.write(f"WORKDIR /code\n")
                 if require_file:
                     f.write(f"COPY {require_file} /requirements.txt\n")

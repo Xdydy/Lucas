@@ -18,13 +18,24 @@ def generate_kn_obj(registry, funcname, appname):
         },
         'spec': {
             'template': {
+                "metadata": {
+                    "annotations": {
+                        "autoscaling.knative.dev/metric": "cpu",
+                        "autoscaling.knative.dev/target": "100"
+                    }
+                },
                 'spec': {
-                    'containerConcurrency': 5,
                     'containers': [
                         {
                             'image': f'{registry}/library/{images_name}:tmp',
                             'imagePullPolicy': "IfNotPresent",
                             'ports': [{'containerPort': 9000}],
+                            # 'resources': {
+                            #     'limits': {
+                            #         'cpu': '0.2',
+                            #         'memory': '1Gi'
+                            #     },
+                            # },
                             'readinessProbe': {
                                 'httpGet': {
                                     'path': '/health',

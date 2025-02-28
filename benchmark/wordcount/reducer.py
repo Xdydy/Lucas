@@ -4,13 +4,14 @@ import time
 def reducer(rt: Runtime):
     start_time = time.time()
     _input = rt.input()
-    _start = _input.get("start")
-    _end = _input.get("end")
     store = rt.storage
     word_counts = {}
-    for i in range(_start, _end):
-        key = f'word_counts_{i}'
-        word_count = store.get(key)
+    _file = None # final output file
+    for k,v in _input.items():
+        if not k.startswith('reducer'):
+            continue
+        _file = v
+        word_count = store.get(v)
         for word in word_count:
             if word in word_counts:
                 word_counts[word] += word_count[word]
@@ -18,6 +19,9 @@ def reducer(rt: Runtime):
                 word_counts[word] = word_count[word]
 
     end_time = time.time()
-    return rt.output({"time": end_time-start_time})
+    return rt.output({
+        "time": end_time-start_time,
+        'output': _file
+    })
 
 handler = create_handler(reducer)
