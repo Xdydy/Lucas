@@ -11,6 +11,7 @@ import uuid
 from lucas.serverless_function import Metadata
 from lucas.utils.logging import log
 from lucas.storage import RedisDB
+from lucas.storage.rocketmq import RocketMQProducer
 
 
 class KnativeRuntime(Runtime):
@@ -23,6 +24,7 @@ class KnativeRuntime(Runtime):
         self._namespace = metadata._namespace
         self._router:dict = metadata._router
         self._type = metadata._type
+        self._msg_sender: RocketMQProducer = metadata._rocketmq_producer
         self._storage = self.KnStorage(redis_db=self._redis_db)
     
     @property
@@ -65,8 +67,10 @@ class KnativeRuntime(Runtime):
             raise ValueError(f"Failed to call function {fnName}: {resp['error']}")
         return resp['data']
     
-    def tell(self):
-        pass
+    def tell(self, fnName:str, fnParams: InputType) -> CallResult:
+        metadata_dict = self._collect_metadata(params=fnParams)
+        log.info(f"Sending message to function {fnName} with metadata: {metadata_dict}")
+        return self._msg_sender.send(topic=fnName, body=json.dumps(metadata_dict))
 
     class KnStorage(StorageMethods):
         def __init__(self, redis_db: RedisDB):

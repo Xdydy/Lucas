@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rocketmq
+---
+# rocketmq-nameserver.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rocketmq-nameserver
+  namespace: rocketmq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rocketmq-nameserver
+  template:
+    metadata:
+      labels:
+        app: rocketmq-nameserver
+    spec:
+      containers:
+      - name: rocketmq-nameserver
+        image: apache/rocketmq:4.9.4
+        command: ["sh", "mqnamesrv"]
+        ports:
+        - containerPort: 9876
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-nameserver
+  namespace: rocketmq
+spec:
+  ports:
+  - port: 9876
+    targetPort: 9876
+  selector:
+    app: rocketmq-nameserver
+  externalIPs:
+  - "10.0.0.101"
+---
+# rocketmq-broker.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rocketmq-broker
+  namespace: rocketmq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rocketmq-broker
+  template:
+    metadata:
+      labels:
+        app: rocketmq-broker
+    spec:
+      containers:
+      - name: rocketmq-broker
+        image: apache/rocketmq:4.9.4
+        command: ["sh", "mqbroker", "-n", "rocketmq-nameserver:9876"]
+        env:
+        - name: JAVA_OPT_EXT
+          value: "-Xms1g -Xmx1g -Xmn512m"
+        ports:
+        - containerPort: 10911
+        - containerPort: 10909
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocketmq-broker
+  namespace: rocketmq
+spec:
+  ports:
+  - name: broker-port-1
+    port: 10911
+    targetPort: 10911
+  - name: broker-port-2
+    port: 10909
+    targetPort: 10909
+  selector:
+    app: rocketmq-broker
+  externalIPs:
+  - "10.0.0.101"

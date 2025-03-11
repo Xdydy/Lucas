@@ -111,7 +111,7 @@ def function(*args, **kwargs):
         
 
 def workflow(*args, **kwargs) -> WorkflowContext:
-    def __workflow(fn) -> Workflow:
+    def __workflow(fn) -> WorkflowContext:
         executor_cls = kwargs.get('executor')
         route = routeBuilder.build()
         def generate_workflow(rt: Runtime) -> Workflow:

@@ -18,24 +18,24 @@ def generate_kn_obj(registry, funcname, appname):
         },
         'spec': {
             'template': {
-                "metadata": {
-                    "annotations": {
-                        "autoscaling.knative.dev/metric": "cpu",
-                        "autoscaling.knative.dev/target": "100"
-                    }
-                },
+                # "metadata": {
+                #     "annotations": {
+                #         "autoscaling.knative.dev/metric": "cpu",
+                #         "autoscaling.knative.dev/target": "100"
+                #     }
+                # },
                 'spec': {
                     'containers': [
                         {
                             'image': f'{registry}/library/{images_name}:tmp',
                             'imagePullPolicy': "IfNotPresent",
                             'ports': [{'containerPort': 9000}],
-                            # 'resources': {
-                            #     'limits': {
-                            #         'cpu': '0.2',
-                            #         'memory': '1Gi'
-                            #     },
-                            # },
+                            'resources': {
+                                'limits': {
+                                    'cpu': '0.2',
+                                    'memory': '1Gi'
+                                },
+                            },
                             'readinessProbe': {
                                 'httpGet': {
                                     'path': '/health',
@@ -58,7 +58,13 @@ def generate_kn_obj(registry, funcname, appname):
                                 }
                             },
                             'command': ['python'],
-                            'args': ['-m', 'lucas.worker', '--lambda_file', f"/code/{funcname}.py", '--function_name', 'handler', '--server_port', '9000']
+                            'args': ['-m', 'lucas.worker', '--lambda_file', f"/code/{funcname}.py", '--function_name', funcname, '--server_port', '9000'],
+                            'env': [
+                                {
+                                    'name': 'FUNC_NAME',
+                                    'value': funcname
+                                }
+                            ]
                         }
                     ]
                 }

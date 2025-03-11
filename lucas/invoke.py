@@ -8,6 +8,40 @@ from kubernetes import config, client
 from lucas.storage import RedisDB
 from lucas.utils.logging import log as logging
 
+consumer = None
+def create_rocketmq_consumer(funcs: list[str]):
+    from .storage.rocketmq import RocketMQConsumer
+    from rocketmq.client import ConsumeStatus
+    def consumer_callback(msg) -> ConsumeStatus:
+        topic = msg.topic
+        logging.info(f"Received message from topic {topic}")
+        try:
+            data = json.loads(msg.body)
+            id = data['id']
+            params = data['params']
+            namespace = data['namespace']
+            router = data['router']
+            metadata_dict = {
+                'id': id,
+                'params': params,
+                'namespace': namespace,
+                'router': router,
+                'type': 'invoke'
+            }
+            resp = requests.post(router[topic], json=metadata_dict, headers={'Content-Type': 'application/json'}, proxies={'http': None, 'https': None})
+            if resp.status_code != 200:
+                logging.error(f"Failed to invoke function {topic}: {resp.text}")
+                return ConsumeStatus.RECONSUME_LATER
+            logging.info(f"Function {topic}'s response: {resp.json()}")
+            return ConsumeStatus.CONSUME_SUCCESS
+        except Exception as e:
+            return ConsumeStatus.RECONSUME_LATER
+    name_server_address = os.getenv('ROCKETMQ_NAME_SERVER_ADDRESS', '10.0.0.101')
+    port = int(os.getenv('ROCKETMQ_PORT', 9876))
+    global consumer
+    consumer = RocketMQConsumer(name_server_address, port, 'lucas', funcs, consumer_callback)
+    logging.info(f"RocketMQ consumer started with subscription to topics: {funcs}")
+    return 
 
 def clean_redis():
     try:
@@ -182,6 +216,12 @@ if __name__ == "__main__":
     
     functions = app_config['functions']
     namespace = app_config.get('appname', 'default')
+    
+    # rocketmq
+    funcs = [function['name'] for function in functions]
+    create_rocketmq_consumer(funcs)
+
+
     for function in functions:
         funcname = function['name']
         router[funcname] = f"http://{funcname}.default.10.0.0.233.sslip.io"

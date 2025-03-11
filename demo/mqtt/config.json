@@ -1,0 +1,17 @@
+{
+    "appname": "communication",
+    "functions": [
+        {
+            "name": "funca",
+            "path": "./index.py"
+        },
+        {
+            "name": "funcb",
+            "path": "./index.py"
+        }
+    ],
+    "inputs": {
+        "split_num": 20,
+        "data_file": "data_100MB.txt"
+    }
+}
