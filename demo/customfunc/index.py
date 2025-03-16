@@ -1,17 +1,19 @@
-from lucas import function,AbstractFunction,workflow,Workflow,create_handler
+from lucas import function, Runtime, Function
 
-class CustomFunc(AbstractFunction):
-    def func(self):
-        print(self.fn)
-        return self.fn()
+@function
+def func(rt: Runtime):
+    return rt.output(rt.input())
 
-@function(wrapper=CustomFunc)
-def f():
-    print("f")
-    return 1
+print(func.export()({"input": "Hello"}))
 
-@workflow
-def testF(wf:Workflow):
-    return wf.call('f',{})
+class MyFunction(Function):
+    def _transformfunction(self, fn):
+        return fn
+    def onFunctionInit(self, fn):
+        print("Function init")
 
-print(testF)
+@function(wrapper=MyFunction, provider='actor')
+def funcb(data):
+    return data
+
+print(funcb.export()({"input": "Hello"}))

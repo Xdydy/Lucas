@@ -11,23 +11,17 @@ from .runtime import (
 )
 from ..workflow import RouteRunner
 from typing import Any, List
-import asyncio
+from ..serverless_function import Metadata
 
 class LocalOnceRuntime(Runtime):
     name: str = 'local-once'
-    def __init__(self, 
-                 data, 
-                 workflow_runner: RouteRunner = None, 
-                 metadata: RuntimeMetadata = None) -> None:
+    def __init__(self, metadata: Metadata) -> None:
         super().__init__()
-        self._input = data
-        self._workflow_runner = workflow_runner
-        self._metadata = metadata
+        self._input = metadata._params
+        self._id = metadata._id
+        self._namespace = metadata._namespace
+        self._router: dict = metadata._router
         self._storage = self.LocalStorage()
-
-    def set_workflow(self, workflow_runner: RouteRunner):
-        self._workflow_runner = workflow_runner
-        return workflow_runner
 
     def input(self):
         return self._input

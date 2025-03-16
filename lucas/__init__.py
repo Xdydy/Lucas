@@ -12,9 +12,16 @@ from .utils import (
     callback,
 )
 from .workflow import Workflow,Route,RouteBuilder,RouteRunner,WorkflowContext
-from typing import Callable, Set, Any
-import asyncio
+from typing import Callable, Any
 import inspect
+from ._private import (
+    FunctionConfig,
+    LocalFunction,
+    AliyunFunction,
+    KnativeFunction,
+    LocalOnceFunction,
+    Function
+)
 
 type_Function = Callable[[Any], FaasitResult]
 
@@ -63,51 +70,38 @@ def durable(fn):
     routeBuilder.func(fn.__name__).set_handler(new_func)
     return new_func
 
-class AbstractFunction:
-    def __init__(self, fn):
-        self.fn = fn
-    def __call__(self, *args, **kwds):
-        return self.fn(*args, **kwds)
-    def func(self):
-        pass
 
-def function(*args, **kwargs):
-    # Read Config for different runtimes
-    if len(kwargs) > 0:
-        wrapper: AbstractFunction = kwargs.get('wrapper')
-        def function(fn: type_Function) -> type_Function:
-            fn_name = kwargs.get('name', fn.__name__)
-            if wrapper is None:
-                new_func = transformfunction(fn)
-                routeBuilder.func(fn_name).set_handler(new_func)
-                return new_func
-            else:
-                custom_func = wrapper(fn)
-                custom_func.func()
-                routeBuilder.func(fn_name).set_handler(custom_func)
-                return custom_func
+def function(*args, **kwargs) -> Function:
 
-        return function
-    else:
+    def __function(fn) -> Function:
+        config = get_function_container_config()
+        provider = kwargs.get('provider', config['provider'])
+        fn_name = kwargs.get('name', fn.__name__)
+        cpu = kwargs.get('cpu', 0.5)
+        memory = kwargs.get('memory', 128)
+        
+        func_cls = kwargs.get('wrapper', None)
+        Function
+        fn_config = FunctionConfig(provider=provider, cpu=cpu, memory=memory, name=fn_name)
+        if provider == 'local':
+            func = LocalFunction(fn, fn_config)
+        elif provider == 'aliyun':
+            func = AliyunFunction(fn, fn_config)
+        elif provider == 'knative':
+            func = KnativeFunction(fn, fn_config)
+        elif provider == 'local-once':
+            func = LocalOnceFunction(fn, fn_config)
+        else:
+            assert(func_cls != None, "wrapper is required for custom runtime")
+            assert(issubclass(func_cls, Function), "wrapper must be subclass of Function")
+            func = func_cls(fn, fn_config)
+        routeBuilder.func(fn_name).set_handler(func)
+        return func
+    if len(args) == 1 and len(kwargs) == 0:
         fn = args[0]
-        signature = inspect.signature(fn)
-        def is_frt_runtime():
-            if len(signature.parameters) != 1:
-                return False
-            first_param = next(iter(signature.parameters.values()))
-            param_name = first_param.name
-            param_annotation = first_param.annotation
-            if param_name == 'frt':
-                return True
-            if param_annotation == Runtime:
-                return True
-            return False
-        if is_frt_runtime():
-            new_func = transformfunction(fn)
-            routeBuilder.func(fn.__name__).set_handler(new_func)
-            return new_func
-        else: # custom runtime
-            return fn
+        return __function(fn)
+    else:
+        return __function
         
 
 def workflow(*args, **kwargs) -> WorkflowContext:
@@ -139,7 +133,7 @@ def recursive(fn):
         return fn
     return Y(helper)
 
-def create_handler(fn_or_workflow : type_Function | Workflow):
+def create_handler(fn_or_workflow : Function | WorkflowContext):
     container_conf = get_function_container_config()
     if isinstance(fn_or_workflow, WorkflowContext):
         workflow_ctx = fn_or_workflow
@@ -176,9 +170,9 @@ def create_handler(fn_or_workflow : type_Function | Workflow):
                 
                 return workflow.execute()
         return handler
-    else: #type(fn) == type_Function:
-        def handler(event: dict, *args):
-            return fn_or_workflow(event, *args)
-        return handler
+    else: #type(fn) == Function:
+        return fn_or_workflow.export()
 
-__all__ = ["function","workflow","durable","create_handler",'recursive','AbstractFunction']
+    
+
+__all__ = ["_private","workflow","durable","create_handler",'recursive','AbstractFunction']

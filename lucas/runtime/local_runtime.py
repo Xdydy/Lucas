@@ -13,24 +13,29 @@ if is_available('local'):
     import aiohttp
     import redis
 
+import json
 from typing import Any
+from lucas.serverless_function import Metadata
 
 class LocalRuntime(Runtime):
     name: str = 'local'
-    def __init__(self, data, metadata:RuntimeMetadata) -> None:
+    def __init__(self, metadata: Metadata) -> None:
         super().__init__()
-        self._input = data
+        self._input = metadata._params
+        self._id = metadata._id
         self._storage = self.LocalStorage()
         self._metadata = metadata
 
     def input(self):
-        return self._input
+        result = None
+        try:
+            result = json.loads(self._input)
+        except Exception as e:
+            result = self._input
+        return result
 
     def output(self, _out):
-        return {
-            'status' : "finished",
-            'result' : _out
-        }
+        return _out
 
     def metadata(self):
         return self._metadata
