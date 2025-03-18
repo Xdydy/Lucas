@@ -1,5 +1,3 @@
-from .storage.rocketmq import RocketMQConsumer
-
 class Metadata:
     def __init__(self, id, params, namespace, router, request_type, redis_db, producer):
         self._id = id # id of request
