@@ -95,7 +95,7 @@ def function(*args, **kwargs) -> Function:
             assert(func_cls != None, "wrapper is required for custom runtime")
             assert(issubclass(func_cls, Function), "wrapper must be subclass of Function")
             func = func_cls(fn, fn_config)
-        routeBuilder.func(fn_name).set_handler(func)
+        routeBuilder.func(fn_name).set_handler(func.export())
         return func
     if len(args) == 1 and len(kwargs) == 0:
         fn = args[0]
@@ -106,6 +106,8 @@ def function(*args, **kwargs) -> Function:
 
 def workflow(*args, **kwargs) -> WorkflowContext:
     def __workflow(fn) -> WorkflowContext:
+        config = get_function_container_config()
+        provider = kwargs.get('provider', config['provider'])
         executor_cls = kwargs.get('executor')
         route = routeBuilder.build()
         def generate_workflow(rt: Runtime) -> Workflow:
@@ -117,7 +119,7 @@ def workflow(*args, **kwargs) -> WorkflowContext:
             wf.end_with(r)
             return wf
         routeBuilder.workflow(fn.__name__).set_workflow(generate_workflow)
-        return WorkflowContext(generate_workflow)
+        return WorkflowContext(generate_workflow, provider, route)
 
     if len(args) == 1 and len(kwargs) == 0:
         fn = args[0]
