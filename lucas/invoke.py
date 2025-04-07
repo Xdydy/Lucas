@@ -219,7 +219,7 @@ if __name__ == "__main__":
     
     # rocketmq
     funcs = [function['name'] for function in functions]
-    create_rocketmq_consumer(funcs)
+    # create_rocketmq_consumer(funcs)
 
 
     for function in functions:
