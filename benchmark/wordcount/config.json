@@ -20,15 +20,11 @@
         {
             "name": "baseline",
             "path": "./baseline.py"
-        },
-        {
-            "name": "adwordcount",
-            "path": "./adwordcount.py"
         }
     ],
     "inputs": {
         "split_num": 20,
-        "data_file": "data_100MB.txt"
+        "data_file": "data_10MB.txt"
     },
     "data": "./data"
 }
