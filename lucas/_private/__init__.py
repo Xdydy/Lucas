@@ -63,7 +63,14 @@ class LocalOnceFunction(Function):
         def localonce_function(data: dict):
             import uuid
             from ..runtime.local_once_runtime import LocalOnceRuntime
-            metadata = Metadata(str(uuid.uuid4()), data, None, None, 'invoke', None, None)
+            from lucas import routeBuilder
+            route = routeBuilder.build()
+            route_dict = {}
+            for function in route.functions:
+                route_dict[function.name] = function.handler
+            for workflow in route.workflows:
+                route_dict[workflow.name] = function.handler
+            metadata = Metadata(str(uuid.uuid4()), data, None, route_dict, 'invoke', None, None)
             rt = LocalOnceRuntime(metadata)
             result = fn(rt)
             return result

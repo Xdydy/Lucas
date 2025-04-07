@@ -9,9 +9,10 @@ from .runtime import (
     InputType,
     RuntimeMetadata,
 )
-from ..workflow import RouteRunner
 from typing import Any, List
 from ..serverless_function import Metadata
+from lucas.utils.logging import log
+import uuid
 
 class LocalOnceRuntime(Runtime):
     name: str = 'local-once'
@@ -28,31 +29,34 @@ class LocalOnceRuntime(Runtime):
 
     def output(self, _out):
         return _out
+    
+    def _collect_metadata(self, params):
+        id = str(uuid.uuid4())
+        return Metadata(
+            id=id, 
+            params=params, 
+            namespace=self._namespace,
+            router=self._router,
+            request_type="invoke",
+            redis_db=None,
+            producer=None
+        )
+        return {
+            'id': id,
+            'params': params,
+            'namespace': self._namespace,
+            'router': self._router,
+            'type': 'invoke'
+        }
 
     def call(self, fnName:str, fnParams: InputType) -> CallResult:
-        fnParams: CallParams = CallParams(
-            input=fnParams
-        )
-        event = fnParams.input
-        seq = fnParams.seq
-        if self._workflow_runner == None:
-            raise Exception("workflow is not defined")
-        metadata = self.helperCollectMetadata("call", fnName, fnParams)
-
-        callerName = self._metadata.funcName
-        print(f"[function call] {callerName} -> {fnName}")
-        print(f"[call params] {event}")
-
-        handler = self._workflow_runner.route(fnName)
-
-        result = handler(event, self._workflow_runner, metadata)
-
-        from ..durable import DurableWaitingResult
-        if isinstance(result, DurableWaitingResult):
-            result = result.waitResult()
-            next(result)
-
+        fn = self._router.get(fnName)
+        if fn is None:
+            raise ValueError(f"Function {fnName} not found in router")
+        metadata = self._collect_metadata(params=fnParams)
+        result = fn(fnParams)
         return result
+        
 
     def tell(self, fnName:str, fnParams: dict) -> Any:
         fnParams:TellParams = TellParams(**fnParams)
