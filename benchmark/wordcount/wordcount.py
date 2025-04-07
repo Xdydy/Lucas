@@ -38,5 +38,3 @@ def wordcount(wf:Workflow):
 
 
     return result
-
-handler = create_handler(wordcount)
