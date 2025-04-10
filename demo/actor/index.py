@@ -118,6 +118,16 @@ class ActorExecutor(Executor):
                 if isinstance(node, DataNode):
                     for control_node in node.get_succ_control_nodes():
                         control_node: ControlNode
+                        control_node_metadata = control_node.metadata()
+                        params = control_node_metadata['params']
+
+                        pb.AppendArg(
+                            SessionID=self._sesstionID,
+                            InstanceID=control_node_metadata['id'],
+                            Name=control_node_metadata['functionname'],
+                            Param=params[node._ld.getid()],
+                            Value=node._ld.value
+                        )
                         log.info(f"{control_node.describe()} appargs {node._ld.value}")
                         if control_node.appargs(node._ld):
                             task.append(control_node)
