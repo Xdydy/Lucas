@@ -14,7 +14,7 @@ class RouteFunc:
                     handler: Callable[[Runtime], FaasitResult]) -> "RouteFunc":
         self.handler = handler
         return self
-    def set_function(self, function: Function) -> "RouteFunc":
+    def set_function(self, function: "Function") -> "RouteFunc":
         self.function = function
         return self
 
