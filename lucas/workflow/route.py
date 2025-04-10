@@ -3,6 +3,7 @@ from ..runtime.runtime import Runtime, FaasitResult
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .workflow import Workflow
+    from lucas._private import Function
 
 class RouteFunc:
     def __init__(self, name: str, handler: Callable[[Runtime], FaasitResult] = None) -> None:
@@ -10,8 +11,12 @@ class RouteFunc:
         self.handler = handler
 
     def set_handler(self, 
-                    handler: Callable[[Runtime], FaasitResult]):
+                    handler: Callable[[Runtime], FaasitResult]) -> "RouteFunc":
         self.handler = handler
+        return self
+    def set_function(self, function: Function) -> "RouteFunc":
+        self.function = function
+        return self
 
 class RouteWorkflow:
     def __init__(self, name: str, generate_workflow = None):

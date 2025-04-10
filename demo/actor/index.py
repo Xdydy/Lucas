@@ -3,7 +3,9 @@ from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
 from lucas.workflow.dag import DAGNode, DataNode, ControlNode
 from lucas.utils.logging import log
-
+from .protos.controller import controller_pb2 as pb
+import pickle
+import uuid
 
 class ActorRuntime(Runtime):
     def __init__(self, metadata: Metadata):
@@ -18,12 +20,16 @@ class ActorRuntime(Runtime):
     def output(self, _out):
         return _out
     
+    def get_result(self):
+        return pb.ReturnResult(
+        )
+    
     def call(self, fnName:str, fnParams: dict):
         print("call function here")
         fn = self._router.get(fnName)
         if fn is None:
             raise ValueError(f"Function {fnName} not found in router")
-        
+
         return {
             'function': fnName,
             'params': fnParams,
@@ -44,12 +50,19 @@ class ActorRuntime(Runtime):
 class ActorFunction(Function):
     def onFunctionInit(self, fn):
         dependcy = self._config.dependency
-        print(dependcy)
+        fn_name = self._config.name
+        params = self._config.params
+        venv = self._config.venv
         print("pickle function here")
+        pb.AppendPyFunc(
+            Name=fn_name,
+            Params=params,
+            Venv=venv,
+            Requirements=dependcy,
+            PickledObject=pickle.dumps(fn)
+        )
     def _transformfunction(self, fn):
         def actor_function(data: dict):
-            import uuid
-
             # just use for local invoke
             from lucas import routeBuilder
             route = routeBuilder.build()
@@ -73,11 +86,11 @@ class ActorFunction(Function):
         return actor_function
 
 
-@function(wrapper=ActorFunction, dependency=['torch', 'numpy'], provider='actor')
+@function(wrapper=ActorFunction, dependency=['torch', 'numpy'], provider='actor', name='funca',params=['a'],venv='conda')
 def funca(rt: Runtime):
     return rt.output(rt.input())
 
-@function(wrapper=ActorFunction, dependency=['torch', 'numpy'],provider='actor')
+@function(wrapper=ActorFunction, dependency=['torch', 'numpy'],provider='actor', name='funcb',params=['a'],venv='conda')
 def funcb(rt: Runtime):
     return rt.output(rt.input())
 
@@ -85,6 +98,7 @@ def funcb(rt: Runtime):
 class ActorExecutor(Executor):
     def __init__(self, dag):
         super().__init__(dag)
+        self._sesstionID = str(uuid.uuid4())
     def execute(self):
         while not self.dag.hasDone():
             task:list[DAGNode] = []
@@ -150,7 +164,6 @@ print(json.dumps(dag.metadata(fn_export=True),indent=2))
 
 
 def actorWorkflowExportFunc(dict: dict):
-    import uuid
 
     # just use for local invoke
     from lucas import routeBuilder

@@ -105,7 +105,7 @@ def function(*args, **kwargs) -> Function:
             assert func_cls != None, "wrapper is required for custom runtime"
             assert issubclass(func_cls, Function), "wrapper must be subclass of Function"
             func = func_cls(fn, fn_config)
-        routeBuilder.func(fn_name).set_handler(func.export())
+        routeBuilder.func(fn_name).set_handler(func.export()).set_function(func)
         return func
     if len(args) == 1 and len(kwargs) == 0:
         fn = args[0]
