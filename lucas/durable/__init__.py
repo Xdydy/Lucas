@@ -1,29 +1,33 @@
-from .models import (
-    localonce_durable
-)
 from ..utils import (
     config
 )
-from .result import (
-    DurableWaitingResult
-)
 
-def createOrchestratorScopedId(orcheId:str):
-    return f"orchestrator::__state__::{orcheId}"
+def localonce(fn):
+    from .models.localonce import localonce_durable
+    return localonce_durable(fn)
+
+def local(fn):
+    return
 
 
+
+def kn(fn):
+    from .models.knative import kn_durable
+    return kn_durable(fn)
 
 def durable_helper(fn):
     conf = config.get_function_container_config()
-    match conf['provider']:
-        case 'local-once':
-            return localonce_durable(fn)
-        case 'local':
-            return
-        case _:
-            raise Exception(f"Unsupported provider {conf['provider']}")
+    provider = conf['provider']
+    providers = {
+        'local-once': localonce,
+        'local': local,
+        'knative': kn,
+    }
+    try:
+        return providers[provider](fn)
+    except KeyError:
+        raise ValueError(f"Invalid provider {provider}")
 
 __all__ = [
-    "durable_helper",
-    "DurableWaitingResult",
+    "durable_helper"
 ]

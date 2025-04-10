@@ -2,6 +2,8 @@ from ..serverless_function import Metadata
 
 class FunctionConfig:
     def __init__(self, *args, **options):
+        for key, value in options.items():
+            setattr(self, key, value)
         pass
 
 class Function:
@@ -76,6 +78,14 @@ class LocalOnceFunction(Function):
             return result
         return localonce_function
 
+class DurableFunction(Function):
+    def __init__(self, fn, config = None):
+        super().__init__(fn, config)
+    def _transformfunction(self, fn):
+        from ..durable import durable_helper
+        return durable_helper(fn)
+
+
 __all__=[
     'FunctionConfig',
     'Function',
@@ -83,4 +93,5 @@ __all__=[
     'AliyunFunction',
     'KnativeFunction',
     'LocalOnceFunction'
+    'DurableFunction'
 ]
