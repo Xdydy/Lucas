@@ -1,16 +1,16 @@
-from .dag import duplicateDAG,DAG,DataNode,ControlNode
+from .dag import duplicateDAG,DAG,DataNode,ControlNode,DAGNode
 from lucas.utils.logging import log
 from threading import Thread
 import time
 
 class Executor:
     def __init__(self, dag:DAG):
-        self.dag = duplicateDAG(dag)
+        self.dag = dag
     def execute(self):
         while not self.dag.hasDone():
-            task = []
+            task:list[DAGNode] = []
             for node in self.dag.get_nodes():
-                if node.done:
+                if node._done:
                     continue
                 if isinstance(node, DataNode):
                     if node.is_ready():
@@ -21,12 +21,12 @@ class Executor:
 
             while len(task) != 0:
                 node = task.pop(0)
-                node.done = True
+                node._done = True
                 if isinstance(node, DataNode):
                     for control_node in node.get_succ_control_nodes():
                         control_node: ControlNode
-                        log.info(f"{control_node.describe()} appargs {node.ld.value}")
-                        if control_node.appargs(node.ld):
+                        log.info(f"{control_node.describe()} appargs {node._ld.value}")
+                        if control_node.appargs(node._ld):
                             task.append(control_node)
                 elif isinstance(node, ControlNode):
                     r_node: DataNode = node.calculate()
@@ -35,8 +35,8 @@ class Executor:
                         task.append(r_node)
         result = None
         for node in self.dag.get_nodes():
-            if isinstance(node, DataNode) and node.is_end_node:
-                result = node.ld.value
+            if isinstance(node, DataNode) and node._is_end_node:
+                result = node._ld.value
                 break
         return result
     

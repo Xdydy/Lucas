@@ -6,6 +6,7 @@ from ..runtime import Runtime
 from .executor import Executor
 from .route import Route,RouteRunner
 from ..utils.logging import log
+from .utils import InvokeFuntion, LocalFunctionCall
 
 class WorkflowInput:
     def __init__(self,workflow:"Workflow") -> None:
@@ -23,6 +24,8 @@ class WorkflowInput:
             DataNode(ld)
             self.workflow.params[key] = ld
             return ld
+    def __getitem__(self,key:str) -> Lambda:
+        return self.get(key)
 
 class Workflow:
     def __init__(self,route:Route = None, name:str= None) -> None:
@@ -48,28 +51,24 @@ class Workflow:
         self._executor_cls = executor_cls
 
     def invokeHelper(self,fn_name):
+        return InvokeFuntion(self.frt, fn_name)
         def invoke_fn(event:Dict):
             nonlocal self,fn_name
             return self.frt.call(fn_name, event)
         return invoke_fn
     @staticmethod
     def funcHelper(fn):
-        def functionCall(data:dict):
-            nonlocal fn
-            args = []
-            kwargs = {}
-            for i in range(len(data)):
-                if i not in data:
-                    break
-                args.append(data[i])
-                data.pop(i)
-            for key in data:
-                kwargs[key] = data[key]
-            return fn(*args,**kwargs)
-        return functionCall
+        return LocalFunctionCall(fn)
 
-    def input(self) -> dict:
-        return self.frt.input()
+    def input(self) -> dict | Lambda:
+        """
+        return the input if the runtime is set
+        else return a lambda
+        """
+        if self.frt != None:
+            return self.frt.input()
+        else:
+            return WorkflowInput(self)
     
     def build_function_param_dag(self,fn_ctl_node:ControlNode,key,ld:Lambda):
         if not isinstance(ld, Lambda):

@@ -1,5 +1,7 @@
 from typing import Any, TYPE_CHECKING, List
 from importlib import import_module
+import uuid
+from .utils import get_item_func
 if TYPE_CHECKING:
     from .dag import DataNode,ControlNode
     from .workflow import Workflow
@@ -11,10 +13,14 @@ def generate_subgraph(wf:"Workflow", fn, list_lambda: list["Lambda"]) -> "Lambda
 
 class Lambda:
     def __init__(self, value: Any | None = None) -> None:
+        self._id = str(uuid.uuid4())
         self.value = value
         self._dataNode: "DataNode" = None
         self.canIter = False
         self.workflow_:"Workflow" = None
+
+    def getid(self):
+        return self._id
 
     def getDataNode(self):
         return self._dataNode
@@ -55,7 +61,7 @@ class Lambda:
     def __getitem__(self, key: str) -> "Lambda":
         if not isinstance(key, Lambda):
             key = Lambda(key)
-        return generate_subgraph(self.workflow_, lambda dir, key: dir[key], [self,key])
+        return generate_subgraph(self.workflow_, get_item_func, [self,key])
     
     def __call__(self, *args: Any, **kwds: Any) -> "Lambda":
         

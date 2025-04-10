@@ -1,19 +1,53 @@
 from .workflow import Workflow
 from .route import Route
+from typing import Type, TypeVar, TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..runtime import Runtime
 class WorkflowContext:
     def __init__(self, wf_generate_fn, provider, route:Route):
         self._wf_generate_fn = wf_generate_fn
-        self._rt = None
+        self._rt_cls  = None
+        self._rt: Runtime = None
         self._provider = provider
         self._route = route
+
+    def set_runtime_cls(self, rt_cls):
+        if rt_cls is not None:
+            self._rt_cls = rt_cls
+            return
+        if self._provider == 'knative':
+            from ..runtime.kn_runtime import KnativeRuntime
+            self._rt_cls = KnativeRuntime
+        elif self._provider == 'aliyun':
+            from ..runtime.aliyun_runtime import AliyunRuntime
+            self._rt_cls = AliyunRuntime
+        elif self._provider == 'local-once':
+            from ..runtime.local_once_runtime import LocalOnceRuntime
+            self._rt_cls = LocalOnceRuntime
+        else:
+            raise NotImplementedError(f"provider {self._provider} is not supported yet")
 
     def set_runtime(self, rt):
         self._rt = rt
     
     def generate(self) -> Workflow:
+        """
+        Generate the workflow. 
+        If the runtime is not set, it will throw an error when executed, but the workflow can still be generated for static analysis.
+        If you want to execute the workflow, you need to call `export()` to get the function.
+        Returns:
+            Workflow: The generated workflow.
+        """
         return self._wf_generate_fn(self._rt)
     
-    def export(self):
+    def export(self, fn=None):
+        """
+        Export the workflow function.
+        Returns:
+            Callable: The exported workflow function.
+        """
+        if fn is not None:
+            return fn
         if self._provider == 'knative':
             from ..serverless_function import Metadata
             from ..runtime.kn_runtime import KnativeRuntime
