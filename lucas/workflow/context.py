@@ -4,10 +4,9 @@ from typing import Type, TypeVar, TYPE_CHECKING
 if TYPE_CHECKING:
     from ..runtime import Runtime
 class WorkflowContext:
-    def __init__(self, wf_generate_fn, provider, route:Route):
-        self._wf_generate_fn = wf_generate_fn
+    def __init__(self, wf: Workflow, provider:str, route:Route):
+        self._wf = wf
         self._rt_cls  = None
-        self._rt: Runtime = None
         self._provider = provider
         self._route = route
 
@@ -28,7 +27,7 @@ class WorkflowContext:
             raise NotImplementedError(f"provider {self._provider} is not supported yet")
 
     def set_runtime(self, rt):
-        self._rt = rt
+        self._wf.setRuntime(rt)
     
     def generate(self) -> Workflow:
         """
@@ -38,7 +37,7 @@ class WorkflowContext:
         Returns:
             Workflow: The generated workflow.
         """
-        return self._wf_generate_fn(self._rt)
+        return self._wf
     
     def export(self, fn=None):
         """
@@ -54,17 +53,15 @@ class WorkflowContext:
             def kn_workflow(metadata: Metadata):
                 rt = KnativeRuntime(metadata)
                 self.set_runtime(rt)
-                workflow = self.generate()
                 
-                return workflow.execute()
+                return self._wf.execute()
             return kn_workflow
         elif self._provider == 'aliyun':
             from ..runtime.aliyun_runtime import AliyunRuntime
             def ali_workflow(args0, args1):
                 rt = AliyunRuntime(args0, args1)
                 self.set_runtime(rt)
-                workflow = self.generate()
-                return workflow.execute()
+                return self._wf.execute()
             return ali_workflow
         elif self._provider == 'local-once':
             from ..runtime.local_once_runtime import LocalOnceRuntime
@@ -77,8 +74,7 @@ class WorkflowContext:
                 metadata = Metadata(str(uuid.uuid4()), data, None, route_dict, 'invoke', None, None)
                 rt = LocalOnceRuntime(metadata)
                 self.set_runtime(rt)
-                workflow = self.generate()
-                return workflow.execute()
+                return self._wf.execute()
             return local_once_workflow
         else:
             raise NotImplementedError(f"provider {self._provider} is not supported yet")

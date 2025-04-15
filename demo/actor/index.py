@@ -1,9 +1,11 @@
+import sys
+sys.path.append("./protos")
 from lucas import workflow, function, Runtime, Workflow, Function
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
 from lucas.workflow.dag import DAGNode, DataNode, ControlNode
 from lucas.utils.logging import log
-from .protos.controller import controller_pb2 as pb
+from protos.controller import controller_pb2 as pb
 import pickle
 import uuid
 
@@ -25,7 +27,7 @@ class ActorRuntime(Runtime):
         )
     
     def call(self, fnName:str, fnParams: dict):
-        print("call function here")
+        print(f"call {fnName}")
         fn = self._router.get(fnName)
         if fn is None:
             raise ValueError(f"Function {fnName} not found in router")
@@ -59,7 +61,7 @@ class ActorFunction(Function):
             Params=params,
             Venv=venv,
             Requirements=dependcy,
-            PickledObject=pickle.dumps(fn)
+            PickledObject=pickle.dumps('aaa')
         )
     def _transformfunction(self, fn):
         def actor_function(data: dict):
@@ -85,10 +87,13 @@ class ActorFunction(Function):
             return result
         return actor_function
 
-
+end = True
 @function(wrapper=ActorFunction, dependency=['torch', 'numpy'], provider='actor', name='funca',params=['a'],venv='conda')
 def funca(rt: Runtime):
-    return rt.output(rt.input())
+    global end
+    result = {**rt.input(), 'end':end}
+    end = False
+    return rt.output(result)
 
 @function(wrapper=ActorFunction, dependency=['torch', 'numpy'],provider='actor', name='funcb',params=['a'],venv='conda')
 def funcb(rt: Runtime):
@@ -112,6 +117,7 @@ class ActorExecutor(Executor):
                     if node.get_pre_data_nodes() == []:
                         task.append(node)
 
+            _end = False
             while len(task) != 0:
                 node = task.pop(0)
                 node._done = True
@@ -120,40 +126,42 @@ class ActorExecutor(Executor):
                         control_node: ControlNode
                         control_node_metadata = control_node.metadata()
                         params = control_node_metadata['params']
-
-                        pb.AppendArg(
-                            SessionID=self._sesstionID,
-                            InstanceID=control_node_metadata['id'],
-                            Name=control_node_metadata['functionname'],
-                            Param=params[node._ld.getid()],
-                            Value=node._ld.value
-                        )
+                        # pb.AppendArg(
+                        #     SessionID=self._sesstionID,
+                        #     InstanceID=control_node_metadata['id'],
+                        #     Name=control_node_metadata['functionname'],
+                        #     Param=params[node._ld.getid()],
+                        #     Value='aaa'
+                        # )
                         log.info(f"{control_node.describe()} appargs {node._ld.value}")
                         if control_node.appargs(node._ld):
                             task.append(control_node)
                 elif isinstance(node, ControlNode):
-                    fn = node._fn
+                    fn = node._fnfuncb
                     params = node._datas
                     result = fn(params)
                     log.info(f"{node.describe()} result {result}")
                     r_node: DataNode = node.get_data_node()
-                    if type(result) == dict:
-                        if 'data' in result:
-                            r_node.set_value(result['data'])
-                        else:
-                            r_node.set_value(result)
-                    else:
+                    if node._fn_type == "local":
                         r_node.set_value(result)
-                    # r_node.set_value(result['data'] if 'data' in result else result)
+                    elif node._fn_type == "remote":
+                        data = result['data']
+                        if 'end' in data and data['end'] == True:
+                            _end = True
+                            break
+                        r_node.set_value(result['data'])
                     r_node.set_ready()
                     log.info(f"{node.describe()} calculate {r_node.describe()}")
                     if r_node.is_ready():
                         task.append(r_node)
+            if _end:
+                break
         result = None
         for node in self.dag.get_nodes():
             if isinstance(node, DataNode) and node._is_end_node:
                 result = node._ld.value
                 break
+        self.dag.reset()
         return result
 
 
@@ -199,4 +207,7 @@ def actorWorkflowExportFunc(dict: dict):
 
 
 workflow_func = workflowfunc.export(actorWorkflowExportFunc)
+print("----first execute----")
 workflow_func({'a': 1})
+print("----second execute----")
+workflow_func({'a': 2})

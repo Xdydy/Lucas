@@ -51,7 +51,7 @@ class Workflow:
         self._executor_cls = executor_cls
 
     def invokeHelper(self,fn_name):
-        return InvokeFuntion(self.frt, fn_name)
+        # return InvokeFuntion(self.frt, fn_name)
         def invoke_fn(event:Dict):
             nonlocal self,fn_name
             return self.frt.call(fn_name, event)
@@ -93,7 +93,7 @@ class Workflow:
         for the remote code support
         """
         invoke_fn = self.invokeHelper(fn_name)
-        fn_ctl_node = ControlNode(invoke_fn, fn_name)
+        fn_ctl_node = ControlNode(invoke_fn, fn_name, "remote")
         self.dag.add_node(fn_ctl_node)
         for key, ld in fn_params.items():
             self.build_function_param_dag(fn_ctl_node,key,ld)
@@ -105,7 +105,7 @@ class Workflow:
         """
         for the local code support
         """
-        fn_ctl_node = ControlNode(Workflow.funcHelper(fn), fn.__name__)
+        fn_ctl_node = ControlNode(Workflow.funcHelper(fn), fn.__name__, "local")
         self.dag.add_node(fn_ctl_node)
         for index,ld in enumerate(args):
             self.build_function_param_dag(fn_ctl_node,index,ld)
@@ -122,6 +122,17 @@ class Workflow:
         return ld.becatch(self)
     
     def execute(self):
+        assert self.frt != None, "Runtime is not set"
+        _input = self.frt.input()
+        for key, ld in self.params.items():
+            if isinstance(ld, Lambda):
+                if ld.getDataNode() == None:
+                    param_node = DataNode(ld)
+                    self.dag.add_node(param_node)
+                else:
+                    param_node = ld.getDataNode()
+                param_node.set_value(_input[key])
+                param_node.set_ready()
         if self._executor_cls==None:
             executor = Executor(self.dag)
         else:

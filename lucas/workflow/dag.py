@@ -1,4 +1,4 @@
-from typing import Any, List, Callable, TYPE_CHECKING, Optional
+from typing import Any, List, Callable, TYPE_CHECKING, Optional,Literal
 from .ld import Lambda
 from lucas.utils.logging import log
 import threading
@@ -22,10 +22,11 @@ class DAGNode:
         }
 
 class ControlNode(DAGNode):
-    def __init__(self, fn, name:str) -> None:
+    def __init__(self, fn, name:str, fn_type:Literal["local", "remote"]) -> None:
         super().__init__()
         self._fn_name = name
         self._fn = fn
+        self._fn_type = fn_type
         self._ld_to_key: dict[Lambda, str] = {}
         self._datas = {}
         self._data_node = None
@@ -47,10 +48,11 @@ class ControlNode(DAGNode):
         result['current'] = self._datas
         result['data_node'] = self._data_node.getid()
         result['pre_data_nodes'] = [node.getid() for node in self._pre_data_nodes]
-        if fn_export:
-            import pickle
-            import base64
-            result['fn'] = base64.b64encode(pickle.dumps(self._fn)).decode()
+        result['functiontype'] = self._fn_type
+        # if fn_export:
+        #     import pickle
+        #     import base64
+        #     result['fn'] = base64.b64encode(pickle.dumps(self._fn)).decode()
         return result
 
     def add_pre_data_node(self, data_node: DAGNode):
@@ -107,8 +109,8 @@ class ControlNode(DAGNode):
         reset the control node to the undone state
         """
         super().reset()
-        self._ld_to_key = self._init_state["ld_to_key"]
-        self._datas = self._init_state["datas"]
+        # self._ld_to_key = self._init_state["ld_to_key"]
+        self._datas = {}
 
 
 class DataNode(DAGNode):
@@ -123,6 +125,9 @@ class DataNode(DAGNode):
         self._child_node:list["DataNode"] = []
         self._lock = threading.Lock()
         ld.setDataNode(self)
+        self._init_state = {
+            'ready' : self._ready
+        }
 
     def metadata(self,fn_export=False) -> dict:
         result = super().metadata()
@@ -140,8 +145,7 @@ class DataNode(DAGNode):
         reset the data node to the undone state
         """
         super().reset()
-        self._ready = False
-        self._ld.value = None
+        self._ready = self._init_state['ready']
 
     def set_parent_node(self, node:"DataNode"):
         self._parent_node = node

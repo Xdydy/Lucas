@@ -120,16 +120,13 @@ def workflow(*args, **kwargs) -> WorkflowContext:
         provider = kwargs.get('provider', config['provider'])
         executor_cls = kwargs.get('executor')
         route = routeBuilder.build()
-        def generate_workflow(rt: Runtime) -> Workflow:
-            wf = Workflow(route,fn.__name__)
-            if executor_cls != None:
-                wf.setExecutor(executor_cls)
-            wf.setRuntime(rt)
-            r  = fn(wf)
-            wf.end_with(r)
-            return wf
-        routeBuilder.workflow(fn.__name__).set_workflow(generate_workflow)
-        return WorkflowContext(generate_workflow, provider, route)
+        wf = Workflow(route,fn.__name__)
+        if executor_cls != None:
+            wf.setExecutor(executor_cls)
+        r = fn(wf)
+        wf.end_with(r)
+        routeBuilder.workflow(fn.__name__).set_workflow(wf)
+        return WorkflowContext(wf, provider, route)
 
     if len(args) == 1 and len(kwargs) == 0:
         fn = args[0]

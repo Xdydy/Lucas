@@ -1,11 +1,18 @@
-from rocketmq.client import Producer, Message
+class C:
+    def func(self):
+        raise NotImplementedError
 
-producer = Producer('test')
-producer.set_name_server_address('10.0.0.101:9876')
-producer.start()
+class B(C):
+    def func(self):
+        return 1
 
-msg = Message('test')
-msg.set_body('hello')
-ret = producer.send_sync(msg)
-print(ret)
-
+class A:
+    def __init__(self, b):
+        self.b = b
+    def func(self):
+        return self.b.func()
+    
+b = C()
+a = A(b)
+b = B()
+a.func()
