@@ -126,6 +126,28 @@ class ActorExecutor(Executor):
                         control_node: ControlNode
                         control_node_metadata = control_node.metadata()
                         params = control_node_metadata['params']
+                        fn_type = control_node_metadata['functiontype']
+                        if fn_type == "remote": # 要调用的函数是远程函数时才需要
+                            data_type = pb.Data.OBJ_ENCODED
+                            data = node._ld.value
+                            if isinstance(node._ld.value, pb.Data) and node._ld.value.Type == pb.Data.OBJ_REF: # 判断一下是什么类型的值
+                                data_type = pb.Data.OBJ_REF
+
+                            if data_type == pb.Data.OBJ_ENCODED: # 如果是实际值，就要序列化
+                                data = pickle.dumps(data)
+                            
+                            rpc_data = pb.Data(
+                                Type=data_type,
+                                Data=data
+                            )
+                            
+                            pb.AppendArg(
+                                SessionID=self._sesstionID,
+                                InstanceID=control_node_metadata['id'],
+                                Name=control_node_metadata['functionname'],
+                                Param=params[node._ld.getid()],
+                                Value=rpc_data
+                            )
                         # pb.AppendArg(
                         #     SessionID=self._sesstionID,
                         #     InstanceID=control_node_metadata['id'],
