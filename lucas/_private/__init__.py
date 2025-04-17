@@ -10,8 +10,8 @@ class Function:
     def __init__(self, fn, config: FunctionConfig = None):
         self._config = config
         fn = self._transformfunction(fn)
-        self.onFunctionInit(fn)
         self._fn = fn
+        self.onFunctionInit(fn)
 
     def _transformfunction(self, fn):
         raise NotImplementedError("This method should be implemented by the subclass.\n If you dont want to implement it, just return the self._fn is ok")
