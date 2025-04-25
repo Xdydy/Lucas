@@ -20,7 +20,7 @@ class FunctionToExecute:
                 return False
         return True
     def run(self):
-        result = self._fn(self._args)
+        result = self._fn(**self._args)
         return result
 
 
@@ -40,7 +40,7 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                 
                 func = FunctionToExecute(fn, params)
                 self._funcs[name] = func
-                print(f"Function {name} registered")
+                print(f"Function {name} registered, params: {params}")
 
                 response = controller_pb2.Message(
                     Type=controller_pb2.CommandType.ACK,
@@ -65,7 +65,7 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                 func.set_args({args_name:data})
                 if func.can_run():
                     result = func.run()
-                    print(result)
+                    print(f"result: {result}")
                     key = f"{sessionID}-{instanceID}-{functionname}"
                     self._data_obj[key] = result
                     response = controller_pb2.Message(
