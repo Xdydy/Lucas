@@ -18,6 +18,13 @@ class RouteFunc:
         self.function = function
         return self
 
+class RouteClass:
+    def __init__(self, name: str, cls = None):
+        self.name = name
+        self._cls = cls
+    def set_actor(self, cls):
+        self._cls = cls
+
 class RouteWorkflow:
     def __init__(self, name: str, generate_workflow = None):
         self.name = name
@@ -26,15 +33,17 @@ class RouteWorkflow:
         self._generate_workflow = generate_workflow
 
 class Route:
-    def __init__(self, functions: list[RouteFunc], workflows:list[RouteWorkflow]) -> None:
+    def __init__(self, functions: list[RouteFunc], workflows:list[RouteWorkflow], actors:list[RouteClass]) -> None:
         self.functions = functions
         self.workflows = workflows
+        self.actors = actors
 
 
 class RouteBuilder:
     def __init__(self) -> None:
         self.funcs: list[RouteFunc] = []
         self.works: list[RouteWorkflow] = []
+        self.actors: list[RouteClass] = []
         pass
 
     # This method is used to add a function to the workflow
@@ -43,6 +52,11 @@ class RouteBuilder:
         newFunc = RouteFunc(funcName)
         self.funcs.append(newFunc)
         return newFunc
+
+    def actor(self, actorName:str) -> RouteClass:
+        newClass = RouteClass(actorName)
+        self.actors.append(newClass)
+        return newClass
     
     def workflow(self, workflowName:str) -> RouteWorkflow:
         newWork = RouteWorkflow(workflowName)
@@ -58,7 +72,7 @@ class RouteBuilder:
 
     # build the workflow
     def build(self) -> Route:
-        return Route(self.funcs,self.works)
+        return Route(self.funcs,self.works,self.actors)
     
 class RouteRunner:
     def __init__(self, route:Route) -> None:

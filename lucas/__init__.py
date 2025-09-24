@@ -9,7 +9,7 @@ from .utils import (
     get_function_container_config,
     callback,
 )
-from .workflow import Workflow,Route,RouteBuilder,RouteRunner,WorkflowContext
+from .workflow import Workflow,Route,RouteBuilder,RouteRunner,WorkflowContext,RouteClass
 from typing import Callable, Any
 import inspect
 from ._private import (
@@ -19,7 +19,9 @@ from ._private import (
     KnativeFunction,
     LocalOnceFunction,
     DurableFunction,
-    Function
+    Function,
+    ActorClass,
+    ActorConfig
 )
 
 type_Function = Callable[[Any], FaasitResult]
@@ -113,6 +115,21 @@ def function(*args, **kwargs) -> Function:
     else:
         return __function
         
+def actor(*args, **kwargs)-> ActorClass:
+    def __actor(cls) -> ActorClass:
+        class_name = kwargs.get('name', cls.__name__)
+        kwargs.setdefault('name', class_name)
+        actorConfig = ActorConfig(**kwargs)
+        class_cls = kwargs.get('wrapper', None)
+        if class_cls is None:
+            class_cls = ActorClass
+        actor_class = class_cls(cls, actorConfig)
+        return actor_class
+    if len(args) == 1 and len(kwargs) == 0:
+        cls = args[0]
+        return __actor(cls)
+    else:
+        return __actor
 
 def workflow(*args, **kwargs) -> WorkflowContext:
     def __workflow(fn) -> WorkflowContext:
