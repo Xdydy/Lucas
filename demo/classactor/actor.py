@@ -257,6 +257,10 @@ class ActorExecutor(Executor):
                     log.info(f"{node.describe()} calculate {r_node.describe()}")
                     if r_node.is_ready():
                         task.append(r_node)
+                
+                with open("dag.json", 'w') as f:
+                    import json
+                    f.write(json.dumps(self.dag.metadata(fn_export=False), indent=2))
             if _end:
                 break
         result = None

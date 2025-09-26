@@ -45,7 +45,7 @@ class ControlNode(DAGNode):
         result['type'] = "ControlNode"
         result["functionname"] = self._fn_name
         result['params'] = {ld.getid(): r for ld, r in self._ld_to_key.items()}
-        result['current'] = self._datas
+        result['current'] = len(self._datas)
         result['data_node'] = self._data_node.getid()
         result['pre_data_nodes'] = [node.getid() for node in self._pre_data_nodes]
         result['functiontype'] = self._fn_type
