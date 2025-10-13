@@ -1,16 +1,22 @@
+import uuid
+
 class ActorConfig:
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self, key, value)
         pass
 
+class ActorInstance:
+    def __init__(self, instance):
+        self._id = str(uuid.uuid4())
+        self._instance = instance
+
 class ActorClass:
     def __init__(self, cls, config: ActorConfig):
         self._cls = cls
         self._config = config
-        self._instance = None
 
-    def onClassInit(self):
+    def onClassInit(self, instance) -> ActorInstance:
         pass    
     
     def export(self, *args, **kwargs):
@@ -18,13 +24,13 @@ class ActorClass:
         导出类实例
         """
         try:
-            self._instance = self._cls(*args, **kwargs)
+            _instance = self._cls(*args, **kwargs)
         except Exception as e:
             raise RuntimeError(f"Failed to create instance of class {self._cls.__name__}: {e}")
         from .. import routeBuilder
-        routeBuilder.actor(self._config.name).set_actor(self._instance)
-        self.onClassInit()
-        return self._instance
+        routeBuilder.actor(self._config.name).set_actor(_instance)
+        actor_instance = self.onClassInit(_instance)
+        return actor_instance
     
     # 调用方法转为类的方法
     def call(self, method_name: str, *args, **kwargs):

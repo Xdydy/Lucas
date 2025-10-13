@@ -1,6 +1,7 @@
 from typing import Callable,Dict,TYPE_CHECKING,Any
 from ..utils import get_function_container_config
-from .dag import DAG, ControlNode,DataNode
+from .._private import ActorInstance
+from .dag import DAG, ControlNode,DataNode, ActorNode
 from .ld import Lambda
 from ..runtime import Runtime
 from .executor import Executor
@@ -56,6 +57,11 @@ class Workflow:
             nonlocal self,fn_name
             return self.frt.call(fn_name, event)
         return invoke_fn
+    def invokeMethodHelper(self, obj: ActorInstance, method_name: str):
+        def invoke_method(event:Dict):
+            nonlocal self,obj,method_name
+            return self.frt.call(obj, method_name, event)
+        return invoke_method
     @staticmethod
     def funcHelper(fn):
         return LocalFunctionCall(fn)
@@ -94,6 +100,24 @@ class Workflow:
         """
         invoke_fn = self.invokeHelper(fn_name)
         fn_ctl_node = ControlNode(invoke_fn, fn_name, "remote")
+        self.dag.add_node(fn_ctl_node)
+        for key, ld in fn_params.items():
+            self.build_function_param_dag(fn_ctl_node,key,ld)
+
+        r = self.build_function_return_dag(fn_ctl_node)
+        return self.catch(r)
+
+    def call_method(self, obj: ActorInstance, method_name: str, fn_params:Dict[str,Lambda]) -> Lambda:
+        """
+        for the remote code support
+        """
+        if not hasattr(obj._instance, method_name):
+            raise AttributeError(f"Object {obj} has no method {method_name}")
+        method = getattr(obj._instance, method_name)
+        if not callable(method):
+            raise TypeError(f"{method_name} is not callable")
+        invoke_fn = self.invokeHelper(f"{obj._id}-{method_name}")
+        fn_ctl_node = ActorNode(obj, invoke_fn, f"{obj._instance.__class__.__name__}.{method_name}", "remote")
         self.dag.add_node(fn_ctl_node)
         for key, ld in fn_params.items():
             self.build_function_param_dag(fn_ctl_node,key,ld)

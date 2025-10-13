@@ -1,7 +1,7 @@
-from lucas import Runtime, Function, ActorClass
+from lucas import Runtime, Function, ActorClass, ActorInstance
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
-from lucas.workflow.dag import DAGNode, DataNode, ControlNode
+from lucas.workflow.dag import DAGNode, DataNode, ControlNode, ActorNode
 from lucas.utils.logging import log
 
 from protos import platform_pb2
@@ -85,6 +85,7 @@ class ActorRuntime(Runtime):
         instanceID = fnParams["instanceID"]
         name = fnParams["name"]
         key = f"{sessionID}-{instanceID}-{name}"
+        print(f"find key: {key}")
         result = None
         while result is None:
             result = actorContext.get_result(key)
@@ -133,34 +134,44 @@ class ActorFunction(Function):
         return fn
 
 class ActorRuntimeClass(ActorClass):
-    def onClassInit(self):
+    def _get_class_methods(self, instance) -> list[controller_pb2.AppendPyClass.ClassMethod]:
+        methods = []
+        all_methods = inspect.getmembers(instance, predicate=inspect.ismethod)
+        for name, method in all_methods:
+            sig = inspect.signature(method)
+            params = sig.parameters.keys()
+            params = list(params)
+            methods.append(controller_pb2.AppendPyClass.ClassMethod(
+                Name=f"{self._config.name}.{name}",
+                Params=params
+            ))
+        return methods
+
+    def onClassInit(self, instance):
         dependcy = self._config.dependency
         class_name = self._config.name
+        instance.__class__.__name__ = class_name
         venv = self._config.venv
         try:
             replicas = self._config.replicas
         except AttributeError:
             replicas = 1
-        sig = inspect.signature(self._cls.__call__)
-        params = []
-        for name, param in sig.parameters.items():
-            if name == 'self':
-                continue
-            params.append(name)
-        print("pickle class here")
-        obj = cloudpickle.dumps(self._instance)
+        obj = cloudpickle.dumps(instance)
+        actorInstance = ActorInstance(instance)
         message = controller_pb2.Message(
-            Type=controller_pb2.CommandType.FR_APPEND_PY_FUNC,
-            AppendPyFunc=controller_pb2.AppendPyFunc(
-                Name=class_name,
-                Params=params,
+            Type=controller_pb2.CommandType.FR_APPEND_PY_CLASS,
+            AppendPyClass=controller_pb2.AppendPyClass(
+                Name=f"{actorInstance._id}",
+                Methods=self._get_class_methods(instance),
                 Venv=venv,
                 Requirements=dependcy,
                 PickledObject=obj,
                 Language=platform_pb2.LANG_PYTHON,
-            ),
+                Replicas=replicas,
+            )
         )
         actorContext.send(message)
+        return actorInstance
 
 class ActorExecutor(Executor):
     def __init__(self, dag):
@@ -219,27 +230,42 @@ class ActorExecutor(Executor):
                             #     )
                             # else:
                             #     rpc_data = controller_pb2.Data(Type=data_type, Ref=data)
-
-                            appendArg = controller_pb2.AppendArg(
-                                SessionID=session_id,
-                                InstanceID=control_node_metadata["id"],
-                                Name=control_node_metadata["functionname"],
-                                Param=params[node._ld.getid()],
-                                Value=rpc_data,
-                            )
-                            message = controller_pb2.Message(
-                                Type=controller_pb2.CommandType.FR_APPEND_ARG,
-                                AppendArg=appendArg,
-                            )
+                            if isinstance(control_node, ActorNode):
+                                actorNode: ActorNode = control_node
+                                appendClassMethodArg = controller_pb2.AppendClassMethodArg(
+                                    SessionID=session_id,
+                                    InstanceID=actorNode._obj._id,
+                                    MethodName=control_node_metadata["functionname"],
+                                    Param=params[node._ld.getid()],
+                                    Value=rpc_data,
+                                )
+                                message = controller_pb2.Message(
+                                    Type=controller_pb2.CommandType.FR_APPEND_CLASS_METHOD_ARG,
+                                    AppendClassMethodArg=appendClassMethodArg,
+                                )
+                            else:    
+                                appendArg = controller_pb2.AppendArg(
+                                    SessionID=session_id,
+                                    InstanceID=control_node_metadata["id"],
+                                    Name=control_node_metadata["functionname"],
+                                    Param=params[node._ld.getid()],
+                                    Value=rpc_data,
+                                )
+                                message = controller_pb2.Message(
+                                    Type=controller_pb2.CommandType.FR_APPEND_ARG,
+                                    AppendArg=appendArg,
+                                )
                             actorContext.send(message)
 
                         log.info(f"{control_node.describe()} appargs {node._ld.value}")
                         if control_node.appargs(node._ld):
                             if control_node._fn_type == "remote":
                                 control_node._datas["sessionID"] = session_id
-                                control_node._datas["instanceID"] = (
-                                    control_node_metadata["id"]
-                                )
+                                if isinstance(control_node, ActorNode):
+                                    control_node._datas['instanceID'] = control_node._obj._id
+                                else:
+                                    control_node._datas["instanceID"] = control_node_metadata["id"]
+                                    
                                 control_node._datas["name"] = control_node_metadata[
                                     "functionname"
                                 ]

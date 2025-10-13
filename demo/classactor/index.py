@@ -11,7 +11,7 @@ context = ActorContext.createContext()
 
 @actor(wrapper=ActorRuntimeClass, dependency=['torch', 'numpy'], provider='actor', name='classA',venv='conda')
 class A:
-    def __call__(self, a):
+    def method(self, a):
         print(a)
         def generator() :
             for i in range(10):
@@ -20,7 +20,7 @@ class A:
 
 @actor(wrapper=ActorRuntimeClass, dependency=['torch', 'numpy'], provider='actor', name='classB',venv='conda')
 class B:
-    def __call__(self, stream):
+    def method(self, stream):
         result = []
         for i in stream:
             result.append(i)
@@ -35,8 +35,8 @@ def workflowfunc(wf: Workflow):
     _in = wf.input()
     in_a = A.export()
     in_b = B.export()
-    a = wf.call('classA', {'a': _in['a']})
-    b = wf.call('classB', {'stream': a})
+    a = wf.call_method(in_a, 'method', {'a': _in['a']})
+    b = wf.call_method(in_b, 'method', {'stream': a})
     return b
 
 

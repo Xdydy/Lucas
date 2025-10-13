@@ -1,5 +1,5 @@
 from .functions import FunctionConfig, Function, LocalFunction, AliyunFunction, KnativeFunction, LocalOnceFunction, DurableFunction
-from .classes import ActorClass, ActorConfig
+from .classes import ActorClass, ActorConfig, ActorInstance
 
 
 __all__=[
@@ -11,5 +11,6 @@ __all__=[
     'LocalOnceFunction'
     'DurableFunction',
     'ActorClass',
-    'ActorConfig'
+    'ActorConfig',
+    'ActorInstance'
 ]

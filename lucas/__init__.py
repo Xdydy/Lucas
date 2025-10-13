@@ -21,7 +21,8 @@ from ._private import (
     DurableFunction,
     Function,
     ActorClass,
-    ActorConfig
+    ActorConfig,
+    ActorInstance
 )
 
 type_Function = Callable[[Any], FaasitResult]

@@ -1,6 +1,7 @@
 from typing import Any, List, Callable, TYPE_CHECKING, Optional,Literal
 from .ld import Lambda
 from lucas.utils.logging import log
+from lucas._private.classes import ActorInstance
 import threading
 import uuid
 if TYPE_CHECKING:
@@ -112,6 +113,11 @@ class ControlNode(DAGNode):
         # self._ld_to_key = self._init_state["ld_to_key"]
         self._datas = {}
 
+
+class ActorNode(ControlNode):
+    def __init__(self, obj: ActorInstance, fn, name:str, fn_type: Literal['local', 'remote']) -> None:
+        super().__init__(fn, name, fn_type)
+        self._obj = obj
 
 class DataNode(DAGNode):
     def __init__(self, ld: Lambda) -> None:
