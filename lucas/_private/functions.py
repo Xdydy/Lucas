@@ -26,7 +26,12 @@ class Function:
         pass
     def onFunctionError(self):
         pass
+
+class MulFunction:
+    def __init__(self, fn, num_workers):
+        self._fns: list[Function] = []
     
+
 class LocalFunction(Function):
     def __init__(self, fn, config: FunctionConfig=None):
         super().__init__(fn, config)

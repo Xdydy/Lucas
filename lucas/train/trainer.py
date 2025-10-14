@@ -1,0 +1,109 @@
+from typing import Callable, Dict, Any, List
+from lucas import function, workflow, Workflow
+from lucas._private.functions import Function, FunctionConfig
+import time
+
+class DataProcessFunction:
+    def __init__(self, fns: list[Function]):
+        self._fns: list[Function] = fns
+    def export(self, executor, fn=None):
+        index = 0
+        
+        @workflow(executor=executor)
+        def robin(wf: Workflow):
+            if len(self._fns) == 0:
+                raise ValueError("No worker functions available")
+            if not isinstance(data, list):
+                data = [data]
+
+            results = []
+            for ds in data:
+                nonlocal index
+                fn = self._fns[index % len(self._fns)]
+                result = wf.call(fn._config.name, )
+                index += 1
+                result = fn(ds)
+                results.extend(result)
+            return results
+        return robin.export(fn)
+
+
+def data_process(
+        num_workers : int = 1,
+        wrapper = Function,
+        dependency: List = [],
+        provider: str = None,
+        name: str = None,
+        venv: str = None,
+    ):
+    def __data_process(fn) -> DataProcessFunction:
+        fns = []
+        for i in range(num_workers):
+            fn_name = f"{name or fn.__name__}_worker_{i}"
+            func = function(
+                provider=provider,
+                name=fn_name,
+                wrapper=wrapper,
+                dependency=dependency,
+                venv=venv,
+            )(fn)
+            fns.append(func)
+        dataProcessFunction = DataProcessFunction(fns)
+        return dataProcessFunction
+        
+    return __data_process
+
+
+class Trainer:
+    def __init__(self, 
+                 train_func: Callable[..., Dict[str, Any]], 
+                 **config):
+        """
+        初始化训练器
+        :param train_func: 训练函数，应返回包含训练结果的字典
+        :param config: 训练配置参数
+        """
+        self.train_func = train_func
+        self.config = config
+        self.metrics = {}
+        self.history = []
+        
+    def run(self, *args, **kwargs) -> Dict[str, Any]:
+        """
+        执行训练
+        :return: 训练结果字典
+        """
+        start_time = time.time()
+        
+        # 合并初始化配置和运行时参数
+        merged_kwargs = {**self.config, **kwargs}
+        
+        try:
+            result = self.train_func(*args, **merged_kwargs)
+            self.metrics = result
+            self.history.append({
+                'timestamp': time.time(),
+                'args': args,
+                'kwargs': merged_kwargs,
+                'result': result
+            })
+            return result
+        except Exception as e:
+            self.metrics = {'error': str(e)}
+            raise
+            
+    def get_metrics(self) -> Dict[str, Any]:
+        """获取最新训练指标"""
+        return self.metrics
+    
+    def get_history(self) -> list:
+        """获取训练历史记录"""
+        return self.history
+    
+def trainer(*args, **kwargs):
+    def __trainer(fn) -> Trainer:
+        return Trainer(fn, kwargs)
+    if len(args) == 1 and callable(args[0]):
+        return __trainer(args[0])
+    else:
+        return __trainer
