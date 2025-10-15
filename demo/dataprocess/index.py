@@ -1,5 +1,6 @@
 import sys
 sys.path.append("./protos")
+sys.path.append("./utils")
 from lucas import workflow, function, Workflow
 from lucas.train.trainer import data_process
 from lucas.serverless_function import Metadata
@@ -24,8 +25,7 @@ def process(x):
 @workflow(executor=ActorExecutor)
 def workflowfunc(wf: Workflow):
     _in = wf.input()
-    process = process.export(executor=ActorExecutor)
-    res = wf.func(process, {'x': _in['a']})
+    res = wf.call("process", {'x': _in['a']})
     return res
 
 

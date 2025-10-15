@@ -6,26 +6,41 @@ import time
 class DataProcessFunction:
     def __init__(self, fns: list[Function]):
         self._fns: list[Function] = fns
-    def export(self, executor, fn=None):
+    def export(self):
         index = 0
         
-        @workflow(executor=executor)
-        def robin(wf: Workflow):
+        # @workflow(executor=executor)
+        # def robin(wf: Workflow):
+        #     if len(self._fns) == 0:
+        #         raise ValueError("No worker functions available")
+        #     _in =  wf.input()
+        #     input_data: Dict[str, List[Any]] = {}
+        #     for key, value in _in.items():
+        #         if not isinstance(value, List):
+        #             value = [value]
+        #         input_data[key] = value
+
+
+        #     def shuffle(*datas):
+        #         results = []
+        #         for data in datas:
+        #             results.extend(data)
+        #         return results
+        #     results = []
+        #     for key, list_value in input_data.items():
+        #         for value in list_value:
+        #             nonlocal index
+        #             fn = self._fns[index % len(self._fns)]
+        #             index += 1
+        #             result = wf.call(fn._config.name, {key: value})
+        #             results.extend(result)
+            
+        #     return wf.func(shuffle, *results)
+        def robin():
             if len(self._fns) == 0:
                 raise ValueError("No worker functions available")
-            if not isinstance(data, list):
-                data = [data]
-
-            results = []
-            for ds in data:
-                nonlocal index
-                fn = self._fns[index % len(self._fns)]
-                result = wf.call(fn._config.name, )
-                index += 1
-                result = fn(ds)
-                results.extend(result)
-            return results
-        return robin.export(fn)
+            return self._fns[index % len(self._fns)]
+        return robin
 
 
 def data_process(
@@ -49,6 +64,8 @@ def data_process(
             )(fn)
             fns.append(func)
         dataProcessFunction = DataProcessFunction(fns)
+        from lucas import routeBuilder
+        routeBuilder.group(name).set_group_func(dataProcessFunction.export())
         return dataProcessFunction
         
     return __data_process

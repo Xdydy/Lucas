@@ -5,7 +5,7 @@ from .dag import DAG, ControlNode,DataNode, ActorNode
 from .ld import Lambda
 from ..runtime import Runtime
 from .executor import Executor
-from .route import Route,RouteRunner
+from .route import Route,RouteRunner,RouteGroupFunc
 from ..utils.logging import log
 from .utils import InvokeFuntion, LocalFunctionCall
 
@@ -51,12 +51,16 @@ class Workflow:
     def setExecutor(self,executor_cls:Executor):
         self._executor_cls = executor_cls
 
-    def invokeHelper(self,fn_name):
-        # return InvokeFuntion(self.frt, fn_name)
+    def invokeHelper(self, fn_name):
+        route_func = self.route.find(fn_name)
+        if isinstance(route_func, RouteGroupFunc):
+            group_func = route_func.group_func
+            fn = group_func()
+            fn_name = fn._config.name
         def invoke_fn(event:Dict):
             nonlocal self,fn_name
             return self.frt.call(fn_name, event)
-        return invoke_fn
+        return invoke_fn, fn_name
     def invokeMethodHelper(self, obj: ActorInstance, method_name: str):
         def invoke_method(event:Dict):
             nonlocal self,obj,method_name
@@ -98,7 +102,7 @@ class Workflow:
         """
         for the remote code support
         """
-        invoke_fn = self.invokeHelper(fn_name)
+        invoke_fn, fn_name = self.invokeHelper(fn_name)
         fn_ctl_node = ControlNode(invoke_fn, fn_name, "remote")
         self.dag.add_node(fn_ctl_node)
         for key, ld in fn_params.items():

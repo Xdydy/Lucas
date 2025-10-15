@@ -32,18 +32,41 @@ class RouteWorkflow:
     def set_workflow(self, generate_workflow):
         self._generate_workflow = generate_workflow
 
+class RouteGroupFunc:
+    def __init__(self, name: str, group_func: Callable[[], "Function"] = None):
+        self.name = name
+        self.group_func = group_func
+    def set_group_func(self, group_func):
+        self.group_func = group_func
+
 class Route:
-    def __init__(self, functions: list[RouteFunc], workflows:list[RouteWorkflow], actors:list[RouteClass]) -> None:
+    def __init__(self, functions: list[RouteFunc], workflows:list[RouteWorkflow], actors:list[RouteClass], groups:list[RouteGroupFunc]) -> None:
         self.functions = functions
         self.workflows = workflows
         self.actors = actors
-
+        self.groups = groups
+    
+    def find(self, name) -> RouteFunc | RouteWorkflow | RouteClass | RouteGroupFunc:
+        for func in self.functions:
+            if func.name == name:
+                return func
+        for work in self.workflows:
+            if work.name == name:
+                return work
+        for actor in self.actors:
+            if actor.name == name:
+                return actor
+        for group in self.groups:
+            if group.name == name:
+                return group
+        raise ValueError(f'Function {name} not found in workflow')
 
 class RouteBuilder:
     def __init__(self) -> None:
         self.funcs: list[RouteFunc] = []
         self.works: list[RouteWorkflow] = []
         self.actors: list[RouteClass] = []
+        self.groups: list[RouteGroupFunc] = []
         pass
 
     # This method is used to add a function to the workflow
@@ -62,6 +85,11 @@ class RouteBuilder:
         newWork = RouteWorkflow(workflowName)
         self.works.append(newWork)
         return newWork
+    
+    def group(self, groupName:str) -> RouteGroupFunc:
+        newGroup = RouteGroupFunc(groupName)
+        self.groups.append(newGroup)
+        return newGroup
 
     # get all the funcs in the workflow
     def get_funcs(self) -> list[RouteFunc]:
@@ -72,7 +100,7 @@ class RouteBuilder:
 
     # build the workflow
     def build(self) -> Route:
-        return Route(self.funcs,self.works,self.actors)
+        return Route(self.funcs,self.works,self.actors,self.groups)
     
 class RouteRunner:
     def __init__(self, route:Route) -> None:

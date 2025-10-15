@@ -1,0 +1,41 @@
+[
+  {
+    "id": "e0c77223-5754-4812-897d-9ab19fdf4592",
+    "done": true,
+    "type": "ControlNode",
+    "functionname": "process_worker_0",
+    "params": {
+      "5cf1fb36-6ba9-4fa8-b65b-c335df9465e6": "x"
+    },
+    "current": 4,
+    "data_node": "92157b83-b051-4a0f-821b-975559a6fad2",
+    "pre_data_nodes": [
+      "72863675-38af-44da-a50b-91314b6377b4"
+    ],
+    "functiontype": "remote"
+  },
+  {
+    "id": "72863675-38af-44da-a50b-91314b6377b4",
+    "done": true,
+    "type": "DataNode",
+    "lambda": "5cf1fb36-6ba9-4fa8-b65b-c335df9465e6",
+    "ready": true,
+    "suf_control_nodes": [
+      "e0c77223-5754-4812-897d-9ab19fdf4592"
+    ],
+    "pre_control_node": null,
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "92157b83-b051-4a0f-821b-975559a6fad2",
+    "done": true,
+    "type": "DataNode",
+    "lambda": "fd5a4123-0d35-45fe-9baa-a504b181cc18",
+    "ready": true,
+    "suf_control_nodes": [],
+    "pre_control_node": "e0c77223-5754-4812-897d-9ab19fdf4592",
+    "parent_node": null,
+    "child_node": []
+  }
+]

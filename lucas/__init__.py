@@ -84,7 +84,9 @@ def durable(*args, **kwargs) -> Function:
     else:
         return __durable
 
-def function(*args, **kwargs) -> Function | Callable[[Callable[...]], Function]:
+from typing import Union  # Add this import at the top if not already present
+
+def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], Function]]:
 
     def __function(fn) -> Function:
         config = get_function_container_config()
