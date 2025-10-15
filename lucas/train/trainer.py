@@ -1,6 +1,7 @@
 from typing import Callable, Dict, Any, List
 from lucas import function, workflow, Workflow
 from lucas._private.functions import Function, FunctionConfig
+from datasets import Dataset
 import time
 
 class DataProcessFunction:
@@ -116,11 +117,62 @@ class Trainer:
     def get_history(self) -> list:
         """获取训练历史记录"""
         return self.history
+
+class TrainerConfig:
+    def __init__(self,
+                 wrapper,
+                 dependency,
+                 provider,
+                 name,
+                 venv):
+        self.wrapper = wrapper
+        self.dependency = dependency
+        self.provider = provider
+        self.name = name
+        self.venv = venv
+    def export(self):
+        return {
+            'wrapper': self.wrapper,
+            'dependency': self.dependency,
+            'provider': self.provider,
+            'name': self.name,
+            'venv': self.venv
+        }
+
+class TrainerPipeline:
+    def __init__(self, 
+                 data_loader: Callable[[str], Any],
+                 model_trainer: Callable[[Dataset], Any],
+                 data_loader_config: TrainerConfig,
+                 model_trainer_config: TrainerConfig
+        ):
+        self.data_loader = data_loader
+        self.model_trainer = model_trainer
+        self.data_loader_config = data_loader_config
+        self.model_trainer_config = model_trainer_config
     
-def trainer(*args, **kwargs):
-    def __trainer(fn) -> Trainer:
-        return Trainer(fn, kwargs)
-    if len(args) == 1 and callable(args[0]):
-        return __trainer(args[0])
-    else:
-        return __trainer
+    def export(self, executor, fn=None) -> Callable[[str], Any]:
+        @function(**self.data_loader_config.export())
+        def data_loader(path: str):
+            return self.data_loader(path)
+        
+        @function(**self.model_trainer_config.export())
+        def model_trainer(dataset: Dataset):
+            return self.model_trainer(dataset)
+
+        data_loader = data_loader.export()
+        model_trainer = model_trainer.export()
+
+        @workflow(executor=executor)
+        def training_pipeline_workflow(wf: Workflow):
+            _in = wf.input()
+            ds = wf.call(self.data_loader_config.name, {"path": _in['path']})
+            model = wf.call(self.model_trainer_config.name, {"dataset": ds})
+            return model
+        workflow_fn = training_pipeline_workflow.export(fn)
+        def output_workflow(path:str):
+            return workflow_fn({"path": path})
+        return output_workflow
+
+class ParameterServer:
+    pass

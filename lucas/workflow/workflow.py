@@ -110,6 +110,19 @@ class Workflow:
 
         r = self.build_function_return_dag(fn_ctl_node)
         return self.catch(r)
+    
+    def map(self, fn_name: str, fn_params: Dict[str, Lambda]) -> Lambda:
+        """
+        for the remote code support
+        """
+        invoke_fn, fn_name = self.invokeHelper(fn_name)
+        fn_ctl_node = ControlNode(invoke_fn, fn_name, "remote_map")
+        self.dag.add_node(fn_ctl_node)
+        for key, ld in fn_params.items():
+            self.build_function_param_dag(fn_ctl_node,key,ld)
+
+        r = self.build_function_return_dag(fn_ctl_node)
+        return self.catch(r)
 
     def call_method(self, obj: ActorInstance, method_name: str, fn_params:Dict[str,Lambda]) -> Lambda:
         """

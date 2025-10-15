@@ -1,0 +1,188 @@
+import platform_pb2 as _platform_pb2
+from google.protobuf.internal import containers as _containers
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+
+DESCRIPTOR: _descriptor.FileDescriptor
+
+class CommandType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    UNSPECIFIED: _ClassVar[CommandType]
+    ACK: _ClassVar[CommandType]
+    FR_READY: _ClassVar[CommandType]
+    FR_APPEND_DATA: _ClassVar[CommandType]
+    FR_APPEND_ACTOR: _ClassVar[CommandType]
+    FR_APPEND_PY_FUNC: _ClassVar[CommandType]
+    FR_APPEND_PY_CLASS: _ClassVar[CommandType]
+    FR_APPEND_ARG: _ClassVar[CommandType]
+    FR_APPEND_CLASS_METHOD_ARG: _ClassVar[CommandType]
+    BK_RETURN_RESULT: _ClassVar[CommandType]
+UNSPECIFIED: CommandType
+ACK: CommandType
+FR_READY: CommandType
+FR_APPEND_DATA: CommandType
+FR_APPEND_ACTOR: CommandType
+FR_APPEND_PY_FUNC: CommandType
+FR_APPEND_PY_CLASS: CommandType
+FR_APPEND_ARG: CommandType
+FR_APPEND_CLASS_METHOD_ARG: CommandType
+BK_RETURN_RESULT: CommandType
+
+class Ack(_message.Message):
+    __slots__ = ("Error",)
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    Error: str
+    def __init__(self, Error: _Optional[str] = ...) -> None: ...
+
+class Ready(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class Data(_message.Message):
+    __slots__ = ("Type", "Ref", "Encoded")
+    class ObjectType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+        __slots__ = ()
+        OBJ_UNSPECIFIED: _ClassVar[Data.ObjectType]
+        OBJ_REF: _ClassVar[Data.ObjectType]
+        OBJ_ENCODED: _ClassVar[Data.ObjectType]
+        OBJ_STREAM: _ClassVar[Data.ObjectType]
+    OBJ_UNSPECIFIED: Data.ObjectType
+    OBJ_REF: Data.ObjectType
+    OBJ_ENCODED: Data.ObjectType
+    OBJ_STREAM: Data.ObjectType
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    REF_FIELD_NUMBER: _ClassVar[int]
+    ENCODED_FIELD_NUMBER: _ClassVar[int]
+    Type: Data.ObjectType
+    Ref: _platform_pb2.Flow
+    Encoded: _platform_pb2.EncodedObject
+    def __init__(self, Type: _Optional[_Union[Data.ObjectType, str]] = ..., Ref: _Optional[_Union[_platform_pb2.Flow, _Mapping]] = ..., Encoded: _Optional[_Union[_platform_pb2.EncodedObject, _Mapping]] = ...) -> None: ...
+
+class AppendData(_message.Message):
+    __slots__ = ("SessionID", "Object")
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    OBJECT_FIELD_NUMBER: _ClassVar[int]
+    SessionID: str
+    Object: _platform_pb2.EncodedObject
+    def __init__(self, SessionID: _Optional[str] = ..., Object: _Optional[_Union[_platform_pb2.EncodedObject, _Mapping]] = ...) -> None: ...
+
+class AppendActor(_message.Message):
+    __slots__ = ("Name", "Params", "Ref")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    PARAMS_FIELD_NUMBER: _ClassVar[int]
+    REF_FIELD_NUMBER: _ClassVar[int]
+    Name: str
+    Params: _containers.RepeatedScalarFieldContainer[str]
+    Ref: _platform_pb2.ActorRef
+    def __init__(self, Name: _Optional[str] = ..., Params: _Optional[_Iterable[str]] = ..., Ref: _Optional[_Union[_platform_pb2.ActorRef, _Mapping]] = ...) -> None: ...
+
+class AppendPyFunc(_message.Message):
+    __slots__ = ("Name", "Params", "Venv", "Requirements", "PickledObject", "Language", "Replicas")
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    PARAMS_FIELD_NUMBER: _ClassVar[int]
+    VENV_FIELD_NUMBER: _ClassVar[int]
+    REQUIREMENTS_FIELD_NUMBER: _ClassVar[int]
+    PICKLEDOBJECT_FIELD_NUMBER: _ClassVar[int]
+    LANGUAGE_FIELD_NUMBER: _ClassVar[int]
+    REPLICAS_FIELD_NUMBER: _ClassVar[int]
+    Name: str
+    Params: _containers.RepeatedScalarFieldContainer[str]
+    Venv: str
+    Requirements: _containers.RepeatedScalarFieldContainer[str]
+    PickledObject: bytes
+    Language: _platform_pb2.Language
+    Replicas: int
+    def __init__(self, Name: _Optional[str] = ..., Params: _Optional[_Iterable[str]] = ..., Venv: _Optional[str] = ..., Requirements: _Optional[_Iterable[str]] = ..., PickledObject: _Optional[bytes] = ..., Language: _Optional[_Union[_platform_pb2.Language, str]] = ..., Replicas: _Optional[int] = ...) -> None: ...
+
+class AppendPyClass(_message.Message):
+    __slots__ = ("Name", "Methods", "Venv", "Requirements", "PickledObject", "Language", "Replicas")
+    class ClassMethod(_message.Message):
+        __slots__ = ("Name", "Params")
+        NAME_FIELD_NUMBER: _ClassVar[int]
+        PARAMS_FIELD_NUMBER: _ClassVar[int]
+        Name: str
+        Params: _containers.RepeatedScalarFieldContainer[str]
+        def __init__(self, Name: _Optional[str] = ..., Params: _Optional[_Iterable[str]] = ...) -> None: ...
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    METHODS_FIELD_NUMBER: _ClassVar[int]
+    VENV_FIELD_NUMBER: _ClassVar[int]
+    REQUIREMENTS_FIELD_NUMBER: _ClassVar[int]
+    PICKLEDOBJECT_FIELD_NUMBER: _ClassVar[int]
+    LANGUAGE_FIELD_NUMBER: _ClassVar[int]
+    REPLICAS_FIELD_NUMBER: _ClassVar[int]
+    Name: str
+    Methods: _containers.RepeatedCompositeFieldContainer[AppendPyClass.ClassMethod]
+    Venv: str
+    Requirements: _containers.RepeatedScalarFieldContainer[str]
+    PickledObject: bytes
+    Language: _platform_pb2.Language
+    Replicas: int
+    def __init__(self, Name: _Optional[str] = ..., Methods: _Optional[_Iterable[_Union[AppendPyClass.ClassMethod, _Mapping]]] = ..., Venv: _Optional[str] = ..., Requirements: _Optional[_Iterable[str]] = ..., PickledObject: _Optional[bytes] = ..., Language: _Optional[_Union[_platform_pb2.Language, str]] = ..., Replicas: _Optional[int] = ...) -> None: ...
+
+class AppendArg(_message.Message):
+    __slots__ = ("SessionID", "InstanceID", "Name", "Param", "Value")
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    INSTANCEID_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    PARAM_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    SessionID: str
+    InstanceID: str
+    Name: str
+    Param: str
+    Value: Data
+    def __init__(self, SessionID: _Optional[str] = ..., InstanceID: _Optional[str] = ..., Name: _Optional[str] = ..., Param: _Optional[str] = ..., Value: _Optional[_Union[Data, _Mapping]] = ...) -> None: ...
+
+class AppendClassMethodArg(_message.Message):
+    __slots__ = ("SessionID", "InstanceID", "MethodName", "Param", "Value")
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    INSTANCEID_FIELD_NUMBER: _ClassVar[int]
+    METHODNAME_FIELD_NUMBER: _ClassVar[int]
+    PARAM_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    SessionID: str
+    InstanceID: str
+    MethodName: str
+    Param: str
+    Value: Data
+    def __init__(self, SessionID: _Optional[str] = ..., InstanceID: _Optional[str] = ..., MethodName: _Optional[str] = ..., Param: _Optional[str] = ..., Value: _Optional[_Union[Data, _Mapping]] = ...) -> None: ...
+
+class ReturnResult(_message.Message):
+    __slots__ = ("SessionID", "InstanceID", "Name", "Value", "Error")
+    SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    INSTANCEID_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    SessionID: str
+    InstanceID: str
+    Name: str
+    Value: Data
+    Error: str
+    def __init__(self, SessionID: _Optional[str] = ..., InstanceID: _Optional[str] = ..., Name: _Optional[str] = ..., Value: _Optional[_Union[Data, _Mapping]] = ..., Error: _Optional[str] = ...) -> None: ...
+
+class Message(_message.Message):
+    __slots__ = ("Type", "Ack", "Ready", "AppendData", "AppendActor", "AppendPyFunc", "AppendPyClass", "AppendArg", "AppendClassMethodArg", "ReturnResult")
+    TYPE_FIELD_NUMBER: _ClassVar[int]
+    ACK_FIELD_NUMBER: _ClassVar[int]
+    READY_FIELD_NUMBER: _ClassVar[int]
+    APPENDDATA_FIELD_NUMBER: _ClassVar[int]
+    APPENDACTOR_FIELD_NUMBER: _ClassVar[int]
+    APPENDPYFUNC_FIELD_NUMBER: _ClassVar[int]
+    APPENDPYCLASS_FIELD_NUMBER: _ClassVar[int]
+    APPENDARG_FIELD_NUMBER: _ClassVar[int]
+    APPENDCLASSMETHODARG_FIELD_NUMBER: _ClassVar[int]
+    RETURNRESULT_FIELD_NUMBER: _ClassVar[int]
+    Type: CommandType
+    Ack: Ack
+    Ready: Ready
+    AppendData: AppendData
+    AppendActor: AppendActor
+    AppendPyFunc: AppendPyFunc
+    AppendPyClass: AppendPyClass
+    AppendArg: AppendArg
+    AppendClassMethodArg: AppendClassMethodArg
+    ReturnResult: ReturnResult
+    def __init__(self, Type: _Optional[_Union[CommandType, str]] = ..., Ack: _Optional[_Union[Ack, _Mapping]] = ..., Ready: _Optional[_Union[Ready, _Mapping]] = ..., AppendData: _Optional[_Union[AppendData, _Mapping]] = ..., AppendActor: _Optional[_Union[AppendActor, _Mapping]] = ..., AppendPyFunc: _Optional[_Union[AppendPyFunc, _Mapping]] = ..., AppendPyClass: _Optional[_Union[AppendPyClass, _Mapping]] = ..., AppendArg: _Optional[_Union[AppendArg, _Mapping]] = ..., AppendClassMethodArg: _Optional[_Union[AppendClassMethodArg, _Mapping]] = ..., ReturnResult: _Optional[_Union[ReturnResult, _Mapping]] = ...) -> None: ...

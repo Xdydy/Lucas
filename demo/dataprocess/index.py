@@ -63,6 +63,6 @@ def actorWorkflowExportFunc(dict: dict):
 
 workflow_func = workflowfunc.export(actorWorkflowExportFunc)
 print("----first execute----")
-workflow_func({'a': 1})
+workflow_func({'a': [1,2,3]})
 print("----second execute----")
-workflow_func({'a': 2})
+workflow_func({'a': [2,3,4]})
