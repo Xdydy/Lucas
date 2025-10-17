@@ -3,6 +3,7 @@ from lucas import function, workflow, Workflow
 from lucas._private.functions import Function, FunctionConfig
 from datasets import Dataset
 import time
+import inspect
 
 class DataProcessFunction:
     def __init__(self, fns: list[Function]):
@@ -141,38 +142,57 @@ class TrainerConfig:
 
 class TrainerPipeline:
     def __init__(self, 
-                 data_loader: Callable[[str], Any],
-                 model_trainer: Callable[[Dataset], Any],
-                 data_loader_config: TrainerConfig,
-                 model_trainer_config: TrainerConfig
+                 data_loader: Callable[..., Any] = None,
+                 data_processer: Callable[..., Any] = None,
+                 model_trainer: Callable[..., Any] = None,
+                 data_loader_config: TrainerConfig = None,
+                 data_processer_config: TrainerConfig = None,
+                 model_trainer_config: TrainerConfig = None
         ):
         self.data_loader = data_loader
+        self.data_processer = data_processer
         self.model_trainer = model_trainer
         self.data_loader_config = data_loader_config
+        self.data_processer_config = data_processer_config
         self.model_trainer_config = model_trainer_config
     
-    def export(self, executor, fn=None) -> Callable[[str], Any]:
-        @function(**self.data_loader_config.export())
-        def data_loader(path: str):
-            return self.data_loader(path)
-        
-        @function(**self.model_trainer_config.export())
-        def model_trainer(dataset: Dataset):
-            return self.model_trainer(dataset)
+    def _fetch_function_signature(self, fn: Callable) -> list[str]:
+        sig = inspect.signature(fn)
+        return [param.name for param in sig.parameters.values()]
 
-        data_loader = data_loader.export()
-        model_trainer = model_trainer.export()
+    def export(self, executor) -> Callable[[str], Any]:
+
+        data_loader_fn = None
+        data_processer_fn = None
+        model_trainer_fn = None
+        if self.data_loader != None:
+            data_loader_fn = function(**self.data_loader_config.export())(self.data_loader).export()
+        if self.model_trainer != None:
+            model_trainer_fn = function(**self.model_trainer_config.export())(self.model_trainer).export()
+        if self.data_processer != None:
+            data_processer_fn = function(**self.data_processer_config.export())(self.data_processer).export()
+        
+            
 
         @workflow(executor=executor)
         def training_pipeline_workflow(wf: Workflow):
             _in = wf.input()
-            ds = wf.call(self.data_loader_config.name, {"path": _in['path']})
-            model = wf.call(self.model_trainer_config.name, {"dataset": ds})
+
+            pipe = None
+            if data_loader_fn != None:
+                params = self._fetch_function_signature(self.data_loader)
+                dict_params = {param: _in[param] for param in params}
+                pipe = wf.call(self.data_loader_config.name, dict_params)
+            if data_processer_fn != None:
+                params = self._fetch_function_signature(self.data_processer)
+                dict_params = {param: pipe for param in params}
+                pipe = wf.call(self.data_processer_config.name, dict_params)
+            if model_trainer_fn != None:
+                params = self._fetch_function_signature(self.model_trainer)
+                dict_params = {param: pipe for param in params}
+                model = wf.call(self.model_trainer_config.name, dict_params)
             return model
-        workflow_fn = training_pipeline_workflow.export(fn)
-        def output_workflow(path:str):
-            return workflow_fn({"path": path})
-        return output_workflow
+        return training_pipeline_workflow
 
 class ParameterServer:
     pass

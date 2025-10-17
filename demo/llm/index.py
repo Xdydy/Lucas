@@ -3,8 +3,8 @@ import time
 from typing import Iterable
 from lucas import workflow, function, Workflow
 from lucas.serverless_function import Metadata
-
-from lucas.actorc.controller.context import (
+from lucas.train.trainer import TrainerPipeline, TrainerConfig
+from lucas.actorc.actor import (
     ActorContext,
     ActorFunction,
     ActorExecutor,
@@ -12,225 +12,91 @@ from lucas.actorc.controller.context import (
 )
 import uuid
 
-import json
-import pandas as pd
-import torch
-from datasets import Dataset
-from modelscope import snapshot_download, AutoTokenizer
-from transformers import AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForSeq2Seq, BitsAndBytesConfig # type: ignore
-import os
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training, PeftModel
-import gc
+context = ActorContext.createContext("localhost:50051")
 
-context = ActorContext.createContext("localhost:8082")
-
-PROMPT = "你是一个医学专家，你需要根据用户的问题，给出带有思考的回答。"
-MAX_LENGTH = 600
-
-train_jsonl_new_path = "/home/spark4862/Documents/projects/go/ignis/clients/demo/datasets"
-lora_path = "/home/spark4862/Documents/projects/go/ignis/clients/demo/lora_adapter_checkpoint"
-
-tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B", use_fast=False, trust_remote_code=True)
-tokenizer.padding_side = 'left'
-
-@function(
+data_loader_config = TrainerConfig(
     wrapper=ActorFunction,
     dependency=[],
     provider="actor",
     name="read_data",
-    venv="test2",
-) # type: ignore
-def read_data(path: str):
-
-    def process_func(example):
-        """
-        将数据集进行预处理
-        """ 
-        input_ids, attention_mask, labels = [], [], []
-        instruction = tokenizer(
-            f"<|im_start|>system\n{PROMPT}<|im_end|>\n<|im_start|>user\n{example['input']}<|im_end|>\n<|im_start|>assistant\n",
-            add_special_tokens=False,
-        )
-        response = tokenizer(f"{example['output']}", add_special_tokens=False)
-        input_ids = instruction["input_ids"] + response["input_ids"] + [tokenizer.pad_token_id]
-        # 手动添加结束符
-        attention_mask = (
-            instruction["attention_mask"] + response["attention_mask"] + [1]
-        )
-        labels = [-100] * len(instruction["input_ids"]) + response["input_ids"] + [tokenizer.pad_token_id]
-        if len(input_ids) > MAX_LENGTH:  # 做一个截断
-            input_ids = input_ids[:MAX_LENGTH]
-            attention_mask = attention_mask[:MAX_LENGTH]
-            labels = labels[:MAX_LENGTH]
-        return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}   
-
-    train_df = pd.read_json(path, lines=True)
-    train_ds = Dataset.from_pandas(train_df)
-    train_dataset = train_ds.map(process_func, remove_columns=train_ds.column_names)
-    return train_dataset
-
-
-@function(
+    venv="test2"
+)
+data_processer_config = TrainerConfig(
+    wrapper=ActorFunction,
+    dependency=[],
+    provider="actor",
+    name="process_data",
+    venv="test2"
+)
+model_trainer_config = TrainerConfig(
     wrapper=ActorFunction,
     dependency=[],
     provider="actor",
     name="train",
-    venv="test2",
-) # type: ignore
-def train(ds: Dataset):
-    # tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B", use_fast=False, trust_remote_code=True)
-    # tokenizer.padding_side = 'left'
-    # global tokenizer
+    venv="test2"
+)
 
-    args = TrainingArguments(
-        # output_dir="/home/spark4862/Documents/projects/go/ignis/clients/demo/output/Qwen3-0.6B",
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=4,
-        eval_strategy="no",
-        logging_steps=1, # logging可以保留，用于观察loss
-        save_steps=100000, # 防止Trainer自动保存
-        learning_rate=1e-2,
-        save_on_each_node=True,
-        gradient_checkpointing=True,
-        run_name="qwen3-0.6B-manual-loop",
-        optim="paged_adamw_8bit",
-    )
+def read_data(dataset: str, name: str):
+    import os
 
-    dc = DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, pad_to_multiple_of=8)
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+    from datasets import load_dataset
 
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,  # 启用4-bit量化
-        bnb_4bit_quant_type="nf4",  # 设置量化类型，"nf4"是推荐的默认值
-        bnb_4bit_compute_dtype=torch.bfloat16,  # 设置计算时的数据类型，以保持精度和速度
-        bnb_4bit_use_double_quant=True,  # 启用双重量化，进一步节省显存
-    )
+    dataset = load_dataset(dataset, name)["train"]
 
-    lora_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
-        target_modules="all-linear",
-        lora_dropout=0.05,
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
+    def generator():
+        for i, x in enumerate(dataset):
+            print(x)
+            time.sleep(0.5)
+            yield x
+            if i > 100:
+                return
+
+    return generator()
 
 
-    print("--- Loading model ---")
-    # global model
-    model1 = AutoModelForCausalLM.from_pretrained(
-        "Qwen/Qwen3-0.6B", 
-        device_map="auto", 
-        torch_dtype=torch.float16, 
-        quantization_config=bnb_config,
-        attn_implementation="flash_attention_2"
-    )
-    model1 = prepare_model_for_kbit_training(model1)
-    if not os.path.exists(lora_path):
-        model1 = get_peft_model(model1, lora_config)
-    else:
-        print("test2", file=sys.stderr)
-        model1 = PeftModel.from_pretrained(model1, lora_path)
-    model1.gradient_checkpointing_enable() # type: ignore
-    model1.enable_input_require_grads() # type: ignore
+def process_data(loader: Iterable[dict[str, str]]):
+    def generator():
+        for x in loader:
+            if x["text"] == "":
+                continue
+            x["text"] = x["text"].strip()
+            print("processed:", x["text"], file=sys.stderr)
+            yield x
 
-    trainer = Trainer(
-        model=model1,
-        args=args,
-        train_dataset=ds,
-        data_collator=dc,
-    )
-    trainer.train()
-    model1.save_pretrained(lora_path)
-
-    model1.cpu()
-    del model1
-    del trainer
-    gc.collect()
-    torch.cuda.synchronize()
-    torch.cuda.empty_cache()
-    return "test"
-
-def predict(path: str):
-    # tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B", use_fast=False, trust_remote_code=True)
-    # tokenizer.padding_side = 'left'
-    # global tokenizer
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,  # 启用4-bit量化
-        bnb_4bit_quant_type="nf4",  # 设置量化类型，"nf4"是推荐的默认值
-        bnb_4bit_compute_dtype=torch.bfloat16,  # 设置计算时的数据类型，以保持精度和速度
-        bnb_4bit_use_double_quant=True,  # 启用双重量化，进一步节省显存
-    )
-    model1 = AutoModelForCausalLM.from_pretrained(
-        "Qwen/Qwen3-0.6B", 
-        device_map="auto", 
-        torch_dtype=torch.float16, 
-        quantization_config=bnb_config,
-        attn_implementation="flash_attention_2"
-    )
-    # global model
-    model1 = model1
-    if os.path.exists(lora_path):
-        print("test1", file=sys.stderr)
-        model1 = PeftModel.from_pretrained(model1, lora_path)
-    
-    test_df = pd.read_json(path, lines=True)
-    for index, row in test_df.iterrows():
-        instruction = row['instruction']
-        input_value = row['input']
-
-        messages = [
-            {"role": "system", "content": f"{instruction}，请用简洁明了的语言直接回答问题，避免重复、解释性冗余和结构化表达"},
-            # , 简要总结
-            {"role": "user", "content": f"{input_value}"}
-        ]
-
-        device = "cuda"
-        text = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            # enable_thinking=False
-        )
-        text = text + "<think>\n\n</think>\n\n"
-        model_inputs = tokenizer([text], return_tensors="pt").to(device)
-        generated_ids = model1.generate(
-            model_inputs.input_ids,
-            attention_mask=model_inputs.attention_mask,
-            max_new_tokens=MAX_LENGTH,
-            temperature=0.3,
-            top_p=0.8,
-            top_k=20,
-            min_p=0,
-            repetition_penalty=1.2,
-            penalty_alpha=0.6,
-            do_sample=True,
-            exponential_decay_length_penalty=(80, 1.03),
-        )
-        generated_ids = [
-            output_ids[len(input_ids):] for input_ids, output_ids in zip(model_inputs.input_ids, generated_ids)
-        ]
-        response = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
-        print(f"""
-        # Question: {input_value}
-
-        # LLM:{response}
-        # """, file=sys.stderr)
-        # responses.append()
-    model1.cpu()
-    del model1
-    gc.collect()
-    torch.cuda.synchronize()
-    torch.cuda.empty_cache()
-    # return responses
+    return generator()
 
 
-@workflow(executor=ActorExecutor) # type: ignore
-def workflowfunc(wf: Workflow):
-    _in = wf.input()
+def train(loader: Iterable[dict[str, str]]):
+    import sys
 
-    ds = wf.call("read_data", {"path": _in["path"]})
-    wf.call("train", {"ds": ds})
-    return "test"
+    param = 0
+    for x in loader:
+        print(x, file=sys.stderr)
+        param += 1
+    print(param, file=sys.stderr)
+
+    return param
+
+
+trainer = TrainerPipeline(
+    data_loader=read_data,
+    data_processer=process_data,
+    model_trainer=train,
+    data_loader_config=data_loader_config,
+    data_processer_config=data_processer_config,
+    model_trainer_config=model_trainer_config,
+)
+
+
+
+
+# workflow_i = workflowfunc.generate()
+# dag = workflow_i.valicate()
+# import json
+
+# print(json.dumps(dag.metadata(fn_export=True), indent=2))
+trainer = trainer.export(ActorExecutor)
 
 def actorWorkflowExportFunc(dict: dict):
 
@@ -253,18 +119,20 @@ def actorWorkflowExportFunc(dict: dict):
         producer=None,
     )
     rt = ActorRuntime(metadata)
-    workflowfunc.set_runtime(rt)
-    workflow = workflowfunc.generate()
+    trainer.set_runtime(rt)
+    workflow = trainer.generate()
     return workflow.execute()
 
-
-workflow_func = workflowfunc.export(actorWorkflowExportFunc)
+trainer_fn = trainer.export(actorWorkflowExportFunc)
 print("----first execute----")
-data_dir = "/home/spark4862/Documents/projects/go/ignis/clients/demo/datasets/"
+trainer_fn({"dataset": "wikitext", "name": "wikitext-2-raw-v1"})
 
-predict("/home/spark4862/Documents/projects/go/ignis/clients/demo/datasets/medical41.jsonl")
+'''
+model = ...
+predict(model, text)
+for i in range(batch_num):
+    batch = read_data(i)
+    model = train(model, batch)
+predict(model, text)
 
-for file in os.listdir(data_dir):
-    workflow_func({"path": os.path.join(data_dir, file)})
-
-predict("/home/spark4862/Documents/projects/go/ignis/clients/demo/datasets/medical41.jsonl")
+'''
