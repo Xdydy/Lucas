@@ -19,6 +19,7 @@ class FunctionToExecute:
     def can_run(self)-> bool:
         for params in self._params:
             if params not in self._args:
+                print(f"{params} not in {self._args}")
                 return False
         return True
     def run(self):

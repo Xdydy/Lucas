@@ -1,0 +1,69 @@
+[
+  {
+    "id": "6471d91c-ebc3-4001-903d-b03d454e3da3",
+    "done": true,
+    "type": "ControlNode",
+    "functionname": "load_data",
+    "params": {
+      "11dd8db2-6a90-4ed8-9c8c-858ca5743259": "ds"
+    },
+    "current": 4,
+    "data_node": "89740bea-c456-469f-b937-9d92aa9641e0",
+    "pre_data_nodes": [
+      "1d766700-81db-49be-8dea-142d2ff271c9"
+    ],
+    "functiontype": "remote"
+  },
+  {
+    "id": "1d766700-81db-49be-8dea-142d2ff271c9",
+    "done": true,
+    "type": "DataNode",
+    "lambda": "11dd8db2-6a90-4ed8-9c8c-858ca5743259",
+    "ready": true,
+    "suf_control_nodes": [
+      "6471d91c-ebc3-4001-903d-b03d454e3da3"
+    ],
+    "pre_control_node": null,
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "89740bea-c456-469f-b937-9d92aa9641e0",
+    "done": true,
+    "type": "DataNode",
+    "lambda": "e229dde8-20c4-412f-ba12-61848394d883",
+    "ready": true,
+    "suf_control_nodes": [
+      "5cee3ba4-cc64-4149-a358-3fe327659c59"
+    ],
+    "pre_control_node": "6471d91c-ebc3-4001-903d-b03d454e3da3",
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "5cee3ba4-cc64-4149-a358-3fe327659c59",
+    "done": true,
+    "type": "ControlNode",
+    "functionname": "evaluate_data",
+    "params": {
+      "e229dde8-20c4-412f-ba12-61848394d883": "dataset"
+    },
+    "current": 4,
+    "data_node": "a2d184da-271d-4174-bed2-1ba5464ee6d2",
+    "pre_data_nodes": [
+      "89740bea-c456-469f-b937-9d92aa9641e0"
+    ],
+    "functiontype": "remote"
+  },
+  {
+    "id": "a2d184da-271d-4174-bed2-1ba5464ee6d2",
+    "done": true,
+    "type": "DataNode",
+    "lambda": "31a974b6-e4ee-4db1-ac35-ffd17137c044",
+    "ready": true,
+    "suf_control_nodes": [],
+    "pre_control_node": "5cee3ba4-cc64-4149-a358-3fe327659c59",
+    "parent_node": null,
+    "child_node": []
+  }
+]

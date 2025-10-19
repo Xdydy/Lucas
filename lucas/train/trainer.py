@@ -1,5 +1,5 @@
 from typing import Callable, Dict, Any, List
-from lucas import function, workflow, Workflow
+from lucas import function, workflow, Workflow, actor
 from lucas._private.functions import Function, FunctionConfig
 from datasets import Dataset
 import time
@@ -195,4 +195,64 @@ class TrainerPipeline:
         return training_pipeline_workflow
 
 class ParameterServer:
-    pass
+    def __init__(self, evaluate_func: Function):
+        self._evaluate_func = evaluate_func
+        self._datas = None
+        self._metrics = None
+        self._function_wrapper = None
+        self._provider = None
+    def load_data(self, data):
+        self._datas = data
+    def store(self, metrics):
+        self._metrics = metrics
+    def evaluate(self):
+        if self._datas is None:
+            raise ValueError("No data loaded for evaluation")
+        if self._evaluate_func is None:
+            raise ValueError("No evaluation function provided")
+        self._metrics = self._evaluate_func(self._datas)
+        return self._metrics
+    def set_function_wrapper(self, wrapper):
+        self._function_wrapper = wrapper
+    def set_provider(self, provider):
+        self._provider = provider
+    def export(self, executor):
+        if self._evaluate_func is None:
+            raise ValueError("No evaluation function provided")
+        if self._datas is None:
+            raise ValueError("No data loaded for evaluation")
+        if self._function_wrapper is None:
+            raise ValueError("No function wrapper set for evaluation function")
+        if self._provider is None:
+            raise ValueError("No provider set for evaluation function")
+        evaluate_func = self._evaluate_func.export()
+        @function(
+            wrapper=self._function_wrapper,
+            dependency=[],
+            provider=self._provider,
+            name="load_data",
+            venv="default"
+        )
+        def load_data(ds):
+            def generate_data():
+                for x, y in self._datas:
+                    yield {
+                        "x": x,
+                        "y": y
+                    }
+            return generate_data()
+        load_data_fn = load_data.export()
+        
+        @workflow(executor=executor)
+        def parameter_server_workflow(wf: Workflow):
+            dataset = wf.call(load_data._config.name, {"ds":"ds"})
+            params = self._fetch_function_signature(evaluate_func)
+            dict_params = {param: dataset for param in params}
+            metric = wf.call(self._evaluate_func._config.name, dict_params)
+            return metric
+
+        return parameter_server_workflow
+
+    def _fetch_function_signature(self, fn: Callable) -> list[str]:
+        sig = inspect.signature(fn)
+        return [param.name for param in sig.parameters.values()]
