@@ -186,7 +186,7 @@ class Workflow:
         else:
             end_node = ld.getDataNode()
         self.dag.add_node(end_node)
-        end_node.is_end_node = True
+        end_node._is_end_node = True
     
     def __str__(self) -> str:
         return str(self.dag)
