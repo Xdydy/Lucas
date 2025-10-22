@@ -1,9 +1,7 @@
-import sys
-sys.path.append("./protos")
 from lucas import workflow, function, Workflow
 from lucas.serverless_function import Metadata
 from lucas.utils.logging import log
-from actor import ActorContext,ActorFunction,ActorExecutor,ActorRuntime
+from lucas.actorc.actor import ActorContext,ActorFunction,ActorExecutor,ActorRuntime
 import uuid
 
 context = ActorContext.createContext()

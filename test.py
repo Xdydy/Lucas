@@ -1,8 +1,5 @@
-def sum(*args):
-    res = 0
-    for arg in args:
-        res += arg
-    return res
+import requests
 
-a = [1,2,3,4]
-print(sum(*a))   
+resp = requests.post("http://localhost:8080/w1", json={"a": "Hello from w1"})
+res = resp.text
+print(res)

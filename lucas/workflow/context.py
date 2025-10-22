@@ -1,6 +1,7 @@
 from .workflow import Workflow
 from .route import Route
 from typing import Type, TypeVar, TYPE_CHECKING
+import uuid
 if TYPE_CHECKING:
     from ..runtime import Runtime
 class WorkflowContext:
@@ -66,7 +67,6 @@ class WorkflowContext:
         elif self._provider == 'local-once':
             from ..runtime.local_once_runtime import LocalOnceRuntime
             from ..serverless_function import Metadata
-            import uuid
             def local_once_workflow(data: dict):
                 route_dict = {}
                 for function in self._route.functions:
@@ -76,5 +76,29 @@ class WorkflowContext:
                 self.set_runtime(rt)
                 return self._wf.execute()
             return local_once_workflow
+        elif self._provider == 'actor':
+            from lucas import routeBuilder
+            from lucas.serverless_function import Metadata
+            from lucas.actorc.actor import ActorRuntime
+            def actor_workflow_export_func(data: dict):
+                route = routeBuilder.build()
+                route_dict = {}
+                for function in route.functions:
+                    route_dict[function.name] = function.handler
+                for workflow in route.workflows:
+                    route_dict[workflow.name] = workflow
+                metadata = Metadata(
+                    id=str(uuid.uuid4()),
+                    params=data,
+                    namespace=None,
+                    router=route_dict,
+                    request_type="invoke",
+                    redis_db=None,
+                    producer=None
+                )
+                rt = ActorRuntime(metadata)
+                self.set_runtime(rt)
+                return self._wf.execute()
+            return actor_workflow_export_func
         else:
             raise NotImplementedError(f"provider {self._provider} is not supported yet")
