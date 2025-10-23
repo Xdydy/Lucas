@@ -133,7 +133,7 @@ class Workflow:
         method = getattr(obj._instance, method_name)
         if not callable(method):
             raise TypeError(f"{method_name} is not callable")
-        invoke_fn = self.invokeHelper(f"{obj._id}-{method_name}")
+        invoke_fn, fn_name = self.invokeHelper(f"{obj._id}-{method_name}")
         fn_ctl_node = ActorNode(obj, invoke_fn, f"{obj._instance.__class__.__name__}.{method_name}", "remote")
         self.dag.add_node(fn_ctl_node)
         for key, ld in fn_params.items():

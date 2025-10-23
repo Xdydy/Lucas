@@ -59,7 +59,7 @@ class Route:
         for group in self.groups:
             if group.name == name:
                 return group
-        raise ValueError(f'Function {name} not found in workflow')
+        # raise ValueError(f'Function {name} not found in workflow')
 
 class RouteBuilder:
     def __init__(self) -> None:

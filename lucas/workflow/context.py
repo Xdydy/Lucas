@@ -87,6 +87,8 @@ class WorkflowContext:
                     route_dict[function.name] = function.handler
                 for workflow in route.workflows:
                     route_dict[workflow.name] = workflow
+                for actor in route.actors:
+                    route_dict[actor.name] = actor._cls
                 metadata = Metadata(
                     id=str(uuid.uuid4()),
                     params=data,
