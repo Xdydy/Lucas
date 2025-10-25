@@ -8,6 +8,7 @@ from .protos import platform_pb2
 from .protos.controller import controller_pb2, controller_pb2_grpc
 from .utils import EncDec
 
+from concurrent.futures import Future, wait
 import cloudpickle
 import grpc
 import uuid
@@ -36,7 +37,8 @@ class ActorContext:
         self._stub = controller_pb2_grpc.ServiceStub(self._channel)
         self._q = queue.Queue()
         self._response_stream = self._stub.Session(self._generate())
-        self._result_map: dict[str, platform_pb2.Flow] = {}
+        self._result_map: dict[str, Future] = {}
+        self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -56,10 +58,21 @@ class ActorContext:
                     name = result.Name
                     value = result.Value
                     key = f"{sessionID}-{instanceID}-{name}"
-                    self._result_map[key] = value
+                    with self._lock:
+                        if key in self._result_map:
+                            future = self._result_map[key]
+                            if not future.done():
+                                future.set_result(value)
+                        else:
+                            future = Future()
+                            future.set_result(value)
+                            self._result_map[key] = future
             time.sleep(1)
 
-    def get_result(self, key: str) -> platform_pb2.Flow:
+    def get_result(self, key: str) -> Future:
+        with self._lock:
+            if key not in self._result_map:
+                self._result_map[key] = Future()
         return self._result_map.get(key)
 
     def send(self, message: controller_pb2.Message):
@@ -79,18 +92,22 @@ class ActorRuntime(Runtime):
     def output(self, _out):
         return _out
 
-    def call(self, fnName: str, fnParams: dict) -> platform_pb2.Flow:
+    def call(self, fnName: str, fnParams: dict) -> Future:
         print(f"call {fnName}")
         sessionID = fnParams["sessionID"]
         instanceID = fnParams["instanceID"]
         name = fnParams["name"]
+        actorContext.send(controller_pb2.Message(
+            Type=controller_pb2.CommandType.FR_INVOKE,
+            Invoke=controller_pb2.Invoke(
+                SessionID=sessionID,
+                InstanceID=instanceID,
+                Name=name,
+            ),
+        ))
         key = f"{sessionID}-{instanceID}-{name}"
         print(f"find key: {key}")
-        result = None
-        while result is None:
-            result = actorContext.get_result(key)
-            if result is None:
-                time.sleep(1)
+        result = actorContext.get_result(key)
         return result
 
     def tell(self, fnName: str, fnParams: dict):
@@ -192,7 +209,12 @@ class ActorExecutor(Executor):
                         task.append(node)
 
             _end = False
-            while len(task) != 0:
+            _futures: list[Future] = []
+            while len(task) != 0 or len(_futures) != 0:
+                if len(task) == 0:
+                    wait(_futures, return_when='FIRST_COMPLETED')
+                    _futures = [fut for fut in _futures if not fut.done()]
+                    continue
                 node = task.pop(0)
                 node._done = True
                 if isinstance(node, DataNode):
@@ -274,15 +296,16 @@ class ActorExecutor(Executor):
                     fn = node._fn
                     params = node._datas
                     r_node: DataNode = node.get_data_node()
-                    result = fn(params)
-                    if node._fn_type == "local":
-                        r_node.set_value(result)
-                    elif node._fn_type == "remote":
-                        r_node.set_value(result)
-                    r_node.set_ready()
-                    log.info(f"{node.describe()} calculate {r_node.describe()}")
-                    if r_node.is_ready():
-                        task.append(r_node)
+                    result: Future = fn(params)
+                    def set_datanode_ready(future: Future):
+                        nonlocal node
+                        r_node.set_value(future.result())
+                        r_node.set_ready()
+                        log.info(f"{node.describe()} calculate {r_node.describe()}")
+                        if r_node.is_ready():
+                            task.append(r_node)
+                    result.add_done_callback(set_datanode_ready)
+                    _futures.append(result)
                 
                 with open("dag.json", 'w') as f:
                     import json

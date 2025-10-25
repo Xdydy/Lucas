@@ -3,8 +3,9 @@
 import grpc
 import warnings
 
+from cluster import cluster_pb2 as cluster_dot_cluster__pb2
 
-GRPC_GENERATED_VERSION = '1.71.0'
+GRPC_GENERATED_VERSION = '1.75.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -22,3 +23,75 @@ if _version_not_supported:
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
+
+
+class ServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.Session = channel.stream_stream(
+                '/proto.Service/Session',
+                request_serializer=cluster_dot_cluster__pb2.Message.SerializeToString,
+                response_deserializer=cluster_dot_cluster__pb2.Message.FromString,
+                _registered_method=True)
+
+
+class ServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def Session(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_ServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'Session': grpc.stream_stream_rpc_method_handler(
+                    servicer.Session,
+                    request_deserializer=cluster_dot_cluster__pb2.Message.FromString,
+                    response_serializer=cluster_dot_cluster__pb2.Message.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'proto.Service', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('proto.Service', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class Service(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def Session(request_iterator,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.stream_stream(
+            request_iterator,
+            target,
+            '/proto.Service/Session',
+            cluster_dot_cluster__pb2.Message.SerializeToString,
+            cluster_dot_cluster__pb2.Message.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

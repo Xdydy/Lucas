@@ -66,6 +66,7 @@ class ClassMethodToExecute:
 class GRPCServer(controller_pb2_grpc.ServiceServicer):
     def __init__(self):
         self._funcs = {}
+        self._pending_funcs = []
         self._data_obj = {}
         self._classes = {}
     def Session(self, request_iterator, context):
@@ -118,6 +119,41 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                 print(f"data: {data}")
                 func: FunctionToExecute = self._funcs[functionname]
                 func.set_args({args_name:data})
+                if func.can_run() and name in self._pending_funcs:
+                    self._pending_funcs.remove(name)
+                    result = func.run()
+                    print(f"result: {result}")
+                    key = f"{sessionID}-{instanceID}-{functionname}"
+                    self._data_obj[key] = result
+                    response = controller_pb2.Message(
+                        Type=controller_pb2.CommandType.BK_RETURN_RESULT,
+                        ReturnResult=controller_pb2.ReturnResult(
+                            SessionID=sessionID,
+                            InstanceID=instanceID,
+                            Name=functionname,
+                            Value=controller_pb2.Data(
+                                Type=controller_pb2.Data.ObjectType.OBJ_REF,
+                                Ref=platform_pb2.Flow(
+                                    ID=key,
+                                    Source={}
+                                )
+                            )
+                        )
+                    )
+                    print(response)
+                    yield response
+                else:
+                    response = controller_pb2.Message(
+                        Type=controller_pb2.CommandType.ACK,
+                        Ack=controller_pb2.Ack(Error="")
+                    )
+                    yield response
+            elif request.Type == controller_pb2.CommandType.FR_INVOKE:
+                invokeReq = request.Invoke
+                sessionID = invokeReq.SessionID
+                instanceID = invokeReq.InstanceID
+                functionname = invokeReq.Name
+                func: FunctionToExecute = self._funcs[functionname]
                 if func.can_run():
                     result = func.run()
                     print(f"result: {result}")
@@ -141,6 +177,7 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                     print(response)
                     yield response
                 else:
+                    self._pending_funcs.append(name)
                     response = controller_pb2.Message(
                         Type=controller_pb2.CommandType.ACK,
                         Ack=controller_pb2.Ack(Error="")

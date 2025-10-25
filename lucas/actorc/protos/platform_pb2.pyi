@@ -2,7 +2,8 @@ import actor_pb2 as _actor_pb2
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -68,16 +69,18 @@ class EncodedObject(_message.Message):
     def __init__(self, ID: _Optional[str] = ..., Data: _Optional[bytes] = ..., Source: _Optional[_Union[StoreRef, _Mapping]] = ..., Language: _Optional[_Union[Language, str]] = ..., Stream: bool = ...) -> None: ...
 
 class StreamChunk(_message.Message):
-    __slots__ = ("StreamID", "EoS", "Value", "Error")
+    __slots__ = ("StreamID", "Target", "EoS", "Value", "Error")
     STREAMID_FIELD_NUMBER: _ClassVar[int]
+    TARGET_FIELD_NUMBER: _ClassVar[int]
     EOS_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     StreamID: str
+    Target: str
     EoS: bool
     Value: EncodedObject
     Error: str
-    def __init__(self, StreamID: _Optional[str] = ..., EoS: bool = ..., Value: _Optional[_Union[EncodedObject, _Mapping]] = ..., Error: _Optional[str] = ...) -> None: ...
+    def __init__(self, StreamID: _Optional[str] = ..., Target: _Optional[str] = ..., EoS: bool = ..., Value: _Optional[_Union[EncodedObject, _Mapping]] = ..., Error: _Optional[str] = ...) -> None: ...
 
 class Invoke(_message.Message):
     __slots__ = ("Target", "SessionID", "Param", "Value")
@@ -85,11 +88,11 @@ class Invoke(_message.Message):
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
     PARAM_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
-    Target: ActorRef
+    Target: str
     SessionID: str
     Param: str
     Value: Flow
-    def __init__(self, Target: _Optional[_Union[ActorRef, _Mapping]] = ..., SessionID: _Optional[str] = ..., Param: _Optional[str] = ..., Value: _Optional[_Union[Flow, _Mapping]] = ...) -> None: ...
+    def __init__(self, Target: _Optional[str] = ..., SessionID: _Optional[str] = ..., Param: _Optional[str] = ..., Value: _Optional[_Union[Flow, _Mapping]] = ...) -> None: ...
 
 class InvokeStart(_message.Message):
     __slots__ = ("Info", "SessionID", "ReplyTo")
@@ -98,8 +101,8 @@ class InvokeStart(_message.Message):
     REPLYTO_FIELD_NUMBER: _ClassVar[int]
     Info: ActorInfo
     SessionID: str
-    ReplyTo: ActorRef
-    def __init__(self, Info: _Optional[_Union[ActorInfo, _Mapping]] = ..., SessionID: _Optional[str] = ..., ReplyTo: _Optional[_Union[ActorRef, _Mapping]] = ...) -> None: ...
+    ReplyTo: str
+    def __init__(self, Info: _Optional[_Union[ActorInfo, _Mapping]] = ..., SessionID: _Optional[str] = ..., ReplyTo: _Optional[str] = ...) -> None: ...
 
 class InvokeResponse(_message.Message):
     __slots__ = ("Target", "SessionID", "Result", "Error", "Info")
@@ -108,9 +111,9 @@ class InvokeResponse(_message.Message):
     RESULT_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     INFO_FIELD_NUMBER: _ClassVar[int]
-    Target: ActorRef
+    Target: str
     SessionID: str
     Result: Flow
     Error: str
     Info: ActorInfo
-    def __init__(self, Target: _Optional[_Union[ActorRef, _Mapping]] = ..., SessionID: _Optional[str] = ..., Result: _Optional[_Union[Flow, _Mapping]] = ..., Error: _Optional[str] = ..., Info: _Optional[_Union[ActorInfo, _Mapping]] = ...) -> None: ...
+    def __init__(self, Target: _Optional[str] = ..., SessionID: _Optional[str] = ..., Result: _Optional[_Union[Flow, _Mapping]] = ..., Error: _Optional[str] = ..., Info: _Optional[_Union[ActorInfo, _Mapping]] = ...) -> None: ...
