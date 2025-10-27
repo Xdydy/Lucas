@@ -6,7 +6,9 @@ import grpc
 import cloudpickle
 from concurrent import futures 
 from .protos.controller import controller_pb2, controller_pb2_grpc
+from .protos.cluster import cluster_pb2, cluster_pb2_grpc
 from .protos import platform_pb2
+from .utils import EncDec
 
 class FunctionToExecute:
     def __init__(self, fn,params):
@@ -224,8 +226,45 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                     print(response)
                     yield response
 
+class ClusterServer(cluster_pb2_grpc.ServiceServicer):
+    def __init__(self, grpc_server: GRPCServer):
+        self._grpc_server = grpc_server
+    def Session(self, request_iterator, context):
+        for request in request_iterator:
+            print("=========")
+            request: cluster_pb2.Message
+            if request.Type == cluster_pb2.MessageType.OBJECT_REQUEST:
+                obj_request = request.ObjectRequest
+                obj_id = obj_request.ID
+                print(f"Received object request for ID: {obj_id}")
+                if obj_id in self._grpc_server._data_obj:
+                    data = self._grpc_server._data_obj[obj_id]
+                    print(f"Object found: {data}")
+                    response = cluster_pb2.Message(
+                        Type=cluster_pb2.MessageType.OBJECT_RESPONSE,
+                        ObjectResponse=cluster_pb2.ObjectResponse(
+                            ID=obj_id,
+                            Value=EncDec.encode(
+                                obj=data,
+                                language=platform_pb2.Language.LANG_PYTHON
+                            )
+                        )
+                    )
+                    print(f"Sending object response for ID: {obj_id}")
+                    yield response
+                else:
+                    response = cluster_pb2.Message(
+                        Type=cluster_pb2.MessageType.OBJECT_RESPONSE,
+                        ObjectResponse=cluster_pb2.ObjectResponse(
+                            Error="Object not found"
+                        )
+                    )
+                    print(f"Object with ID: {obj_id} not found")
+
 server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-controller_pb2_grpc.add_ServiceServicer_to_server(GRPCServer(), server)
+grpc_server = GRPCServer()
+controller_pb2_grpc.add_ServiceServicer_to_server(grpc_server, server)
+cluster_pb2_grpc.add_ServiceServicer_to_server(ClusterServer(grpc_server), server)
 server.add_insecure_port('[::]:50051')
 server.start()
 print("start")

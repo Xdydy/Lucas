@@ -6,6 +6,7 @@ from lucas.utils.logging import log
 
 from .protos import platform_pb2
 from .protos.controller import controller_pb2, controller_pb2_grpc
+from .protos.cluster import cluster_pb2, cluster_pb2_grpc
 from .utils import EncDec
 
 from concurrent.futures import Future, wait
@@ -35,16 +36,26 @@ class ActorContext:
             options=[("grpc.max_receive_message_length", 512 * 1024 * 1024)],
         )
         self._stub = controller_pb2_grpc.ServiceStub(self._channel)
+        self._cluster_stub = cluster_pb2_grpc.ServiceStub(self._channel)
         self._q = queue.Queue()
+        self._cluster_q = queue.Queue()
         self._response_stream = self._stub.Session(self._generate())
+        self._cluster_resp_stream = self._cluster_stub.Session(self._cluster_generate())
         self._result_map: dict[str, Future] = {}
+        self._obj_map: dict[str, Future] = {}
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
+        self._cluster_thread = threading.Thread(target=self._run_cluster, daemon=True)
         self._thread.start()
+        self._cluster_thread.start()
 
     def _generate(self):
         while True:
             msg = self._q.get()
+            yield msg
+    def _cluster_generate(self):
+        while True:
+            msg = self._cluster_q.get()
             yield msg
 
     def _run(self):
@@ -69,14 +80,43 @@ class ActorContext:
                             self._result_map[key] = future
             time.sleep(1)
 
+    def _run_cluster(self):
+        while True:
+            for response in self._cluster_resp_stream:
+                response: cluster_pb2.Message
+                if response.Type == cluster_pb2.MessageType.OBJECT_RESPONSE:
+                    obj_response: cluster_pb2.ObjectResponse = response.ObjectResponse
+                    obj_id = obj_response.ID
+                    value = obj_response.Value
+                    value = EncDec.decode(value)
+                    with self._lock:
+                        if obj_id in self._obj_map:
+                            future = self._obj_map[obj_id]
+                            if not future.done():
+                                future.set_result(value)
+                        else:
+                            future = Future()
+                            future.set_result(value)
+                            self._obj_map[obj_id] = future
+            time.sleep(1)
+
     def get_result(self, key: str) -> Future:
         with self._lock:
             if key not in self._result_map:
                 self._result_map[key] = Future()
         return self._result_map.get(key)
 
+    def get_obj(self, obj_id: str) -> Future:
+        with self._lock:
+            if obj_id not in self._obj_map:
+                self._obj_map[obj_id] = Future()
+        return self._obj_map.get(obj_id)
+
     def send(self, message: controller_pb2.Message):
         self._q.put(message)
+    
+    def send_cluster(self, message: cluster_pb2.Message):
+        self._cluster_q.put(message)
 
 
 class ActorRuntime(Runtime):
@@ -316,6 +356,18 @@ class ActorExecutor(Executor):
         for node in self.dag.get_nodes():
             if isinstance(node, DataNode) and node._is_end_node:
                 result = node._ld.value
+                result: controller_pb2.Data
+                msg = cluster_pb2.Message(
+                    Type=cluster_pb2.MessageType.OBJECT_REQUEST,
+                    ObjectRequest=cluster_pb2.ObjectRequest(
+                        ID=result.Ref.ID,
+                        Target=None,
+                        ReplyTo=None
+                    )
+                )
+                actorContext.send_cluster(msg)
+                result_f = actorContext.get_obj(result.Ref.ID)
+                result = result_f.result()
                 break
         self.dag.reset()
         return result
