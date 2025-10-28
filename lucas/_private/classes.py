@@ -19,7 +19,7 @@ class ActorClass:
     def onClassInit(self, instance) -> ActorInstance:
         pass    
     
-    def export(self, *args, **kwargs):
+    def export(self, *args, **kwargs) -> ActorInstance:
         """
         导出类实例
         """

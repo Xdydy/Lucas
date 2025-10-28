@@ -92,11 +92,10 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
         config = get_function_container_config()
         provider = kwargs.get('provider', config['provider'])
         fn_name = kwargs.get('name', fn.__name__)
-        cpu = kwargs.get('cpu', 0.5)
+        cpu = kwargs.get('cpu', 1)
         memory = kwargs.get('memory', 128)
         
         func_cls = kwargs.get('wrapper', None)
-        Function
         fn_config = FunctionConfig(**kwargs)
         if provider == 'local':
             func = LocalFunction(fn, fn_config)
@@ -118,7 +117,7 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
     else:
         return __function
         
-def actor(*args, **kwargs)-> ActorClass:
+def actor(*args, **kwargs)-> ActorClass | Callable[[type], ActorClass]:
     def __actor(cls) -> ActorClass:
         class_name = kwargs.get('name', cls.__name__)
         kwargs.setdefault('name', class_name)

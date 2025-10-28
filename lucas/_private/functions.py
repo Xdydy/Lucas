@@ -9,8 +9,7 @@ class FunctionConfig:
 class Function:
     def __init__(self, fn, config: FunctionConfig = None):
         self._config = config
-        fn = self._transformfunction(fn)
-        self._fn = fn
+        self._fn = self._transformfunction(fn)
         self.onFunctionInit(fn)
 
     def _transformfunction(self, fn):

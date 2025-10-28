@@ -79,11 +79,13 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                 name = pyFunc.Name
                 params = pyFunc.Params
                 fn = pyFunc.PickledObject
+                resources = pyFunc.Resources
                 fn = cloudpickle.loads(fn)
                 
                 func = FunctionToExecute(fn, params)
                 self._funcs[name] = func
                 print(f"Function {name} registered, params: {params}")
+                print(f"Function {name}'s Resources: {resources}")
 
                 response = controller_pb2.Message(
                     Type=controller_pb2.CommandType.ACK,
@@ -95,7 +97,9 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                 name = pyClass.Name
                 obj = pyClass.PickledObject
                 obj = cloudpickle.loads(obj)
+                resources = pyClass.Resources
                 print(f"Class {name} registered, methods: {[method.Name for method in pyClass.Methods]}")
+                print(f"Class {name}'s Resources: {resources}")
                 class_to_execute = ClassMethodToExecute(obj, pyClass.Methods)
                 self._classes[name] = class_to_execute
                 response = controller_pb2.Message(
@@ -155,36 +159,68 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                 sessionID = invokeReq.SessionID
                 instanceID = invokeReq.InstanceID
                 functionname = invokeReq.Name
-                func: FunctionToExecute = self._funcs[functionname]
-                if func.can_run():
-                    result = func.run()
-                    print(f"result: {result}")
-                    key = f"{sessionID}-{instanceID}-{functionname}"
-                    self._data_obj[key] = result
-                    response = controller_pb2.Message(
-                        Type=controller_pb2.CommandType.BK_RETURN_RESULT,
-                        ReturnResult=controller_pb2.ReturnResult(
-                            SessionID=sessionID,
-                            InstanceID=instanceID,
-                            Name=functionname,
-                            Value=controller_pb2.Data(
-                                Type=controller_pb2.Data.ObjectType.OBJ_REF,
-                                Ref=platform_pb2.Flow(
-                                    ID=key,
-                                    Source={}
+                if functionname.find(".") != -1:
+                    class_to_execute : ClassMethodToExecute= self._classes[instanceID]
+                    if class_to_execute.can_run(functionname):
+                        result = class_to_execute.run(functionname)
+                        print(f"result: {result}")
+                        key = f"{sessionID}-{instanceID}-{functionname}"
+                        self._data_obj[key] = result
+                        response = controller_pb2.Message(
+                            Type=controller_pb2.CommandType.BK_RETURN_RESULT,
+                            ReturnResult=controller_pb2.ReturnResult(
+                                SessionID=sessionID,
+                                InstanceID=instanceID,
+                                Name=functionname,
+                                Value=controller_pb2.Data(
+                                    Type=controller_pb2.Data.ObjectType.OBJ_REF,
+                                    Ref=platform_pb2.Flow(
+                                        ID=key,
+                                        Source={}
+                                    )
                                 )
                             )
                         )
-                    )
-                    print(response)
-                    yield response
-                else:
-                    self._pending_funcs.append(name)
-                    response = controller_pb2.Message(
-                        Type=controller_pb2.CommandType.ACK,
-                        Ack=controller_pb2.Ack(Error="")
-                    )
-                    yield response
+                        print(response)
+                        yield response
+                    else:
+                        self._pending_funcs.append(functionname)
+                        response = controller_pb2.Message(
+                            Type=controller_pb2.CommandType.ACK,
+                            Ack=controller_pb2.Ack(Error="")
+                        )
+                        yield response
+                else:    
+                    func: FunctionToExecute = self._funcs[functionname]
+                    if func.can_run():
+                        result = func.run()
+                        print(f"result: {result}")
+                        key = f"{sessionID}-{instanceID}-{functionname}"
+                        self._data_obj[key] = result
+                        response = controller_pb2.Message(
+                            Type=controller_pb2.CommandType.BK_RETURN_RESULT,
+                            ReturnResult=controller_pb2.ReturnResult(
+                                SessionID=sessionID,
+                                InstanceID=instanceID,
+                                Name=functionname,
+                                Value=controller_pb2.Data(
+                                    Type=controller_pb2.Data.ObjectType.OBJ_REF,
+                                    Ref=platform_pb2.Flow(
+                                        ID=key,
+                                        Source={}
+                                    )
+                                )
+                            )
+                        )
+                        print(response)
+                        yield response
+                    else:
+                        self._pending_funcs.append(name)
+                        response = controller_pb2.Message(
+                            Type=controller_pb2.CommandType.ACK,
+                            Ack=controller_pb2.Ack(Error="")
+                        )
+                        yield response
             elif request.Type == controller_pb2.CommandType.FR_APPEND_CLASS_METHOD_ARG:
                 appendArg = request.AppendClassMethodArg
                 sessionID = appendArg.SessionID
@@ -203,7 +239,7 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                 print(f"data: {data}")
                 class_to_execute: ClassMethodToExecute = self._classes[instanceID]
                 class_to_execute.set_method(method_name, {args_name:data})
-                if class_to_execute.can_run(method_name):
+                if class_to_execute.can_run(method_name) and method_name in self._pending_funcs:
                     result = class_to_execute.run(method_name)
                     print(f"result: {result}")
                     key = f"{sessionID}-{instanceID}-{method_name}"

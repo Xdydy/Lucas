@@ -160,35 +160,153 @@ class ActorRuntime(Runtime):
 
 
 class ActorFunction(Function):
+    def __init__(self, fn, config = None):
+        self._params = []
+        self._instance_id = str(uuid.uuid4())
+        super().__init__(fn, config)
     def onFunctionInit(self, fn):
         dependcy = self._config.dependency
         fn_name = self._config.name
         venv = self._config.venv
+        cpu = None
+        memory = None
+        try:
+            cpu = self._config.cpu
+        except AttributeError:
+            cpu = None
+        try:
+            memory = self._config.memory
+        except AttributeError:
+            memory = None
         try:
             replicas = self._config.replicas
         except AttributeError:
             replicas = 1
         sig = inspect.signature(fn)
-        params = []
         for name, param in sig.parameters.items():
-            params.append(name)
-        print("pickle function here")
+            self._params.append(name)
         message = controller_pb2.Message(
             Type=controller_pb2.CommandType.FR_APPEND_PY_FUNC,
             AppendPyFunc=controller_pb2.AppendPyFunc(
                 Name=fn_name,
-                Params=params,
+                Params=self._params,
                 Venv=venv,
                 Requirements=dependcy,
-                PickledObject=cloudpickle.dumps(self._fn),
+                PickledObject=cloudpickle.dumps(fn),
                 Language=platform_pb2.LANG_PYTHON,
+                Resources=controller_pb2.Resources(
+                    CPU=cpu,
+                    Memory=memory,
+                ),
                 Replicas=replicas,
             ),
         )
         actorContext.send(message)
 
     def _transformfunction(self, fn):
-        return fn
+        def actor_function(args: dict):
+            sessionID = str(uuid.uuid4())
+            for key, value in args.items():
+                if isinstance(value, controller_pb2.Data):
+                    rpc_data = value
+                else:
+                    rpc_data = controller_pb2.Data(
+                        Type=controller_pb2.Data.ObjectType.OBJ_ENCODED,
+                        Encoded=EncDec.encode(
+                            value, language=platform_pb2.LANG_PYTHON
+                        ),
+                    )
+                actorContext.send(controller_pb2.Message(
+                    Type=controller_pb2.CommandType.FR_APPEND_ARG,
+                    AppendArg=controller_pb2.AppendArg(
+                        SessionID=sessionID,
+                        InstanceID=self._instance_id,
+                        Name=self._config.name,
+                        Param=key,
+                        Value=rpc_data,
+                    ),
+                ))
+            actorContext.send(controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_INVOKE,
+                Invoke=controller_pb2.Invoke(
+                    SessionID=sessionID,
+                    InstanceID=self._instance_id,
+                    Name=self._config.name,
+                ),
+            ))
+            key = f"{sessionID}-{self._instance_id}-{self._config.name}"
+            result = actorContext.get_result(key)
+            result = result.result()
+            actorContext.send_cluster(cluster_pb2.Message(
+                Type=cluster_pb2.MessageType.OBJECT_REQUEST,
+                ObjectRequest=cluster_pb2.ObjectRequest(
+                    ID=key,
+                    Target=None,
+                    ReplyTo=None
+                )
+            ))
+            result = actorContext.get_obj(key)
+            result = result.result()
+            return result
+        return actor_function
+
+class ActorRuntimeInstance(ActorInstance):
+    def __init__(self, instance):
+        super().__init__(instance)
+    def remote(self, method_name, data:dict):
+        if not hasattr(self._instance, method_name):
+            raise AttributeError(f"Object {self._instance} has no method {method_name}")
+        method = getattr(self._instance, method_name)
+        if not callable(method):
+            raise TypeError(f"{method_name} is not callable")
+        
+        sessionID = str(uuid.uuid4())
+        method_name = self._instance.__class__.__name__ + "." + method_name
+        for key, value in data.items():
+            if isinstance(value, controller_pb2.Data):
+                rpc_data = value
+            else:
+                rpc_data = controller_pb2.Data(
+                    Type=controller_pb2.Data.ObjectType.OBJ_ENCODED,
+                    Encoded=EncDec.encode(
+                        value, language=platform_pb2.LANG_PYTHON
+                    ),
+                )
+            appendClassMethodArg = controller_pb2.AppendClassMethodArg(
+                SessionID=sessionID,
+                InstanceID=self._id,
+                MethodName=method_name,
+                Param=key,
+                Value=rpc_data,
+            )
+            message = controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_APPEND_CLASS_METHOD_ARG,
+                AppendClassMethodArg=appendClassMethodArg,
+            )
+            actorContext.send(message)
+        message = controller_pb2.Message(
+            Type=controller_pb2.CommandType.FR_INVOKE,
+            Invoke=controller_pb2.Invoke(
+                SessionID=sessionID,
+                InstanceID=self._id,
+                Name=method_name,
+            ),
+        )
+        actorContext.send(message)
+        key = f"{sessionID}-{self._id}-{method_name}"
+        result = actorContext.get_result(key)
+        result = result.result()
+        actorContext.send_cluster(cluster_pb2.Message(
+            Type=cluster_pb2.MessageType.OBJECT_REQUEST,
+            ObjectRequest=cluster_pb2.ObjectRequest(
+                ID=key,
+                Target=None,
+                ReplyTo=None
+            )
+        ))
+        real_result = actorContext.get_obj(key)
+        return real_result.result()
+        
 
 class ActorRuntimeClass(ActorClass):
     def _get_class_methods(self, instance) -> list[controller_pb2.AppendPyClass.ClassMethod]:
@@ -209,12 +327,25 @@ class ActorRuntimeClass(ActorClass):
         class_name = self._config.name
         instance.__class__.__name__ = class_name
         venv = self._config.venv
+        cpu = None
+        memory = None
+        try:
+            cpu = self._config.cpu
+        except AttributeError:
+            cpu = None
+        
+        try:
+            memory = self._config.memory
+        except AttributeError:
+            memory = None
+
+
         try:
             replicas = self._config.replicas
         except AttributeError:
             replicas = 1
         obj = cloudpickle.dumps(instance)
-        actorInstance = ActorInstance(instance)
+        actorInstance = ActorRuntimeInstance(instance)
         message = controller_pb2.Message(
             Type=controller_pb2.CommandType.FR_APPEND_PY_CLASS,
             AppendPyClass=controller_pb2.AppendPyClass(
@@ -224,6 +355,10 @@ class ActorRuntimeClass(ActorClass):
                 Requirements=dependcy,
                 PickledObject=obj,
                 Language=platform_pb2.LANG_PYTHON,
+                Resources=controller_pb2.Resources(
+                    CPU=cpu,
+                    Memory=memory,
+                ),
                 Replicas=replicas,
             )
         )
@@ -266,12 +401,9 @@ class ActorExecutor(Executor):
                         data = node._ld.value
 
                         if fn_type == "remote":  # 要调用的函数是远程函数时才需要
-                            print(data)
                             if isinstance(data, controller_pb2.Data):
-                                print("data is already a Data object")
                                 rpc_data = data
                             else:
-                                print("data is not a Data object, encode it")
                                 rpc_data = controller_pb2.Data(
                                     Type=controller_pb2.Data.ObjectType.OBJ_ENCODED,
                                     Encoded=EncDec.encode(

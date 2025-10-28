@@ -3,8 +3,7 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from collections.abc import Iterable as _Iterable, Mapping as _Mapping
-from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
+from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -118,7 +117,7 @@ class AppendPyFunc(_message.Message):
     def __init__(self, Name: _Optional[str] = ..., Params: _Optional[_Iterable[str]] = ..., Venv: _Optional[str] = ..., Requirements: _Optional[_Iterable[str]] = ..., PickledObject: _Optional[bytes] = ..., Language: _Optional[_Union[_platform_pb2.Language, str]] = ..., Resources: _Optional[_Union[Resources, _Mapping]] = ..., Replicas: _Optional[int] = ...) -> None: ...
 
 class AppendPyClass(_message.Message):
-    __slots__ = ("Name", "Methods", "Venv", "Requirements", "PickledObject", "Language", "Replicas")
+    __slots__ = ("Name", "Methods", "Venv", "Requirements", "PickledObject", "Language", "Resources", "Replicas")
     class ClassMethod(_message.Message):
         __slots__ = ("Name", "Params")
         NAME_FIELD_NUMBER: _ClassVar[int]
@@ -132,6 +131,7 @@ class AppendPyClass(_message.Message):
     REQUIREMENTS_FIELD_NUMBER: _ClassVar[int]
     PICKLEDOBJECT_FIELD_NUMBER: _ClassVar[int]
     LANGUAGE_FIELD_NUMBER: _ClassVar[int]
+    RESOURCES_FIELD_NUMBER: _ClassVar[int]
     REPLICAS_FIELD_NUMBER: _ClassVar[int]
     Name: str
     Methods: _containers.RepeatedCompositeFieldContainer[AppendPyClass.ClassMethod]
@@ -139,8 +139,9 @@ class AppendPyClass(_message.Message):
     Requirements: _containers.RepeatedScalarFieldContainer[str]
     PickledObject: bytes
     Language: _platform_pb2.Language
+    Resources: Resources
     Replicas: int
-    def __init__(self, Name: _Optional[str] = ..., Methods: _Optional[_Iterable[_Union[AppendPyClass.ClassMethod, _Mapping]]] = ..., Venv: _Optional[str] = ..., Requirements: _Optional[_Iterable[str]] = ..., PickledObject: _Optional[bytes] = ..., Language: _Optional[_Union[_platform_pb2.Language, str]] = ..., Replicas: _Optional[int] = ...) -> None: ...
+    def __init__(self, Name: _Optional[str] = ..., Methods: _Optional[_Iterable[_Union[AppendPyClass.ClassMethod, _Mapping]]] = ..., Venv: _Optional[str] = ..., Requirements: _Optional[_Iterable[str]] = ..., PickledObject: _Optional[bytes] = ..., Language: _Optional[_Union[_platform_pb2.Language, str]] = ..., Resources: _Optional[_Union[Resources, _Mapping]] = ..., Replicas: _Optional[int] = ...) -> None: ...
 
 class AppendArg(_message.Message):
     __slots__ = ("SessionID", "InstanceID", "Name", "Param", "Value")
