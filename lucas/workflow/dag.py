@@ -102,7 +102,7 @@ class ControlNode(DAGNode):
         return res
 
     def __str__(self) -> str:
-        res = f"(ControlNode {super().__str__()}) {self.fn.__name__}"
+        res = f"(ControlNode {super().__str__()}) {self._fn.__name__}"
         return res
 
     def reset(self):

@@ -1,3 +1,4 @@
+from typing import Any, Callable
 from lucas import Runtime, Function, ActorClass, ActorInstance
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
@@ -369,28 +370,51 @@ class ActorExecutor(Executor):
     def __init__(self, dag):
         super().__init__(dag)
 
+    def _get_real_result(self, data: controller_pb2.Data):
+        message = cluster_pb2.Message(
+            Type = cluster_pb2.MessageType.OBJECT_REQUEST,
+            ObjectRequest = cluster_pb2.ObjectRequest(
+                ID = data.Ref.ID,
+                Target = None,
+                ReplyTo = None
+            )
+        )
+        actorContext.send_cluster(message)
+        result_f = actorContext.get_obj(data.Ref.ID)
+        result = result_f.result()
+        return result
+
     def execute(self):
         session_id = str(uuid.uuid4())
         while not self.dag.hasDone():
+            _task_lock = threading.Lock()
             task: list[DAGNode] = []
             for node in self.dag.get_nodes():
                 if node._done:
                     continue
                 if isinstance(node, DataNode):
                     if node._ready:
-                        task.append(node)
+                        with _task_lock:
+                            task.append(node)
                 if isinstance(node, ControlNode):
                     if node.get_pre_data_nodes() == []:
-                        task.append(node)
+                        with _task_lock:
+                            task.append(node)
 
             _end = False
             _futures: list[Future] = []
+            _map_future_handler: dict[Future, Callable[[Future], Any]] = {}
             while len(task) != 0 or len(_futures) != 0:
                 if len(task) == 0:
-                    wait(_futures, return_when='FIRST_COMPLETED')
-                    _futures = [fut for fut in _futures if not fut.done()]
+                    done, _futures = wait(_futures, return_when='FIRST_COMPLETED')
+                    # _futures = [fut for fut in _futures if not fut.done()]
+                    for future in done:
+                        handler = _map_future_handler[future]
+                        handler(future)
+                        del _map_future_handler[future]
                     continue
-                node = task.pop(0)
+                with _task_lock:
+                    node = task.pop(0)
                 node._done = True
                 if isinstance(node, DataNode):
                     for control_node in node.get_succ_control_nodes():
@@ -410,20 +434,6 @@ class ActorExecutor(Executor):
                                         data, language=platform_pb2.LANG_PYTHON
                                     ),
                                 )
-                            # if (
-                            #     data_type == controller_pb2.Data.ObjectType.OBJ_ENCODED
-                            # ):  # 如果是实际值，就要序列化
-                            #     data = cloudpickle.dumps(data)
-                            #     rpc_data = controller_pb2.Data(
-                            #         Type=data_type,
-                            #         Encoded=platform_pb2.EncodedObject(
-                            #             ID="",
-                            #             Data=data,
-                            #             Language=platform_pb2.Language.LANG_PYTHON,
-                            #         ),
-                            #     )
-                            # else:
-                            #     rpc_data = controller_pb2.Data(Type=data_type, Ref=data)
                             if isinstance(control_node, ActorNode):
                                 actorNode: ActorNode = control_node
                                 appendClassMethodArg = controller_pb2.AppendClassMethodArg(
@@ -450,6 +460,13 @@ class ActorExecutor(Executor):
                                     AppendArg=appendArg,
                                 )
                             actorContext.send(message)
+                        else: # 本地调用函数
+                            print(data)
+                            if isinstance(data, controller_pb2.Data): # 需要获取实际值，不能传引用
+                                data = self._get_real_result(data)
+                                node.set_value(data)
+                            
+
 
                         log.info(f"{control_node.describe()} appargs {node._ld.value}")
                         if control_node.appargs(node._ld):
@@ -463,21 +480,31 @@ class ActorExecutor(Executor):
                                 control_node._datas["name"] = control_node_metadata[
                                     "functionname"
                                 ]
-                            task.append(control_node)
+                            with _task_lock:
+                                task.append(control_node)
                 elif isinstance(node, ControlNode):
                     fn = node._fn
                     params = node._datas
                     r_node: DataNode = node.get_data_node()
-                    result: Future = fn(params)
-                    def set_datanode_ready(future: Future):
-                        nonlocal node
-                        r_node.set_value(future.result())
+                    result = fn(params)
+                    if isinstance(result, Future):
+                        def set_datanode_ready(future: Future):
+                            nonlocal node, _task_lock, task
+                            r_node.set_value(future.result())
+                            r_node.set_ready()
+                            log.info(f"{node.describe()} calculate {r_node.describe()}")
+                            if r_node.is_ready():
+                                with _task_lock:
+                                    task.append(r_node)
+                        _map_future_handler[result] = set_datanode_ready
+                        _futures.append(result)
+                    else:
+                        r_node.set_value(result)
                         r_node.set_ready()
                         log.info(f"{node.describe()} calculate {r_node.describe()}")
                         if r_node.is_ready():
-                            task.append(r_node)
-                    result.add_done_callback(set_datanode_ready)
-                    _futures.append(result)
+                            with _task_lock:
+                                task.append(r_node)
                 
                 with open("dag.json", 'w') as f:
                     import json
@@ -487,19 +514,12 @@ class ActorExecutor(Executor):
         result = None
         for node in self.dag.get_nodes():
             if isinstance(node, DataNode) and node._is_end_node:
+                from lucas.workflow import Lambda
                 result = node._ld.value
-                result: controller_pb2.Data
-                msg = cluster_pb2.Message(
-                    Type=cluster_pb2.MessageType.OBJECT_REQUEST,
-                    ObjectRequest=cluster_pb2.ObjectRequest(
-                        ID=result.Ref.ID,
-                        Target=None,
-                        ReplyTo=None
-                    )
-                )
-                actorContext.send_cluster(msg)
-                result_f = actorContext.get_obj(result.Ref.ID)
-                result = result_f.result()
+                while isinstance(result, Lambda):
+                    result = result.value
+                if isinstance(result, controller_pb2.Data):
+                    result = self._get_real_result(result)
                 break
         self.dag.reset()
         return result
