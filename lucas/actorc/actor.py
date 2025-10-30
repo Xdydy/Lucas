@@ -1,4 +1,7 @@
+import os
 from typing import Any, Callable
+from .utils.memory import parse_memory_string
+from .utils.mapper import to_proto_dag
 from lucas import Runtime, Function, ActorClass, ActorInstance
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
@@ -24,16 +27,27 @@ actorContext: "ActorContext | None" = None
 
 class ActorContext:
     @staticmethod
-    def createContext(master_address: str = "localhost:50051"):
+    def createContext(ignis_address: str = None, app_id: str = None):
         global actorContext
         if actorContext is None:
-            actorContext = ActorContext(master_address)
+            if ignis_address is None:
+                ignis_address = os.getenv("IGNIS_ADDR", "localhost:50051")
+            if app_id is None:
+                app_id = os.getenv("APP_ID", None)
+            actorContext = ActorContext(ignis_address, app_id)
         return actorContext
 
-    def __init__(self, master_address: str = "localhost:50051"):
-        self._master_address = master_address
+    def __init__(self, ignis_address: str = None, app_id: str = None):
+        if ignis_address is None:
+            log.error("IGNIS_ADDR is not set")
+            raise ValueError("IGNIS_ADDR is not set")
+        if app_id is None:
+            log.error("APP_ID is not set")
+            raise ValueError("APP_ID is not set")
+        self._ignis_address = ignis_address
+        self._app_id = app_id
         self._channel = grpc.insecure_channel(
-            master_address,
+            ignis_address,
             options=[("grpc.max_receive_message_length", 512 * 1024 * 1024)],
         )
         self._stub = controller_pb2_grpc.ServiceStub(self._channel)
@@ -47,6 +61,27 @@ class ActorContext:
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._cluster_thread = threading.Thread(target=self._run_cluster, daemon=True)
+        
+        # register application
+        self.send(
+            controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_REGISTER_REQUEST,
+                RegisterRequest=controller_pb2.RegisterRequest(
+                    ApplicationID=app_id,
+                ),
+            )
+        )
+
+        # wait for ready
+        for response in self._response_stream:
+            response: controller_pb2.Message
+            if response.Type == controller_pb2.CommandType.ACK:
+                ack: controller_pb2.Ack = response.Ack
+                if ack.Error != "":
+                    log.error(f"Register application failed: {ack.Error}")
+                    raise ValueError(f"Register application failed: {ack.Error}")
+                break
+
         self._thread.start()
         self._cluster_thread.start()
 
@@ -197,7 +232,7 @@ class ActorFunction(Function):
                 Language=platform_pb2.LANG_PYTHON,
                 Resources=controller_pb2.Resources(
                     CPU=cpu,
-                    Memory=memory,
+                    Memory=parse_memory_string(memory),
                 ),
                 Replicas=replicas,
             ),
@@ -369,6 +404,14 @@ class ActorRuntimeClass(ActorClass):
 class ActorExecutor(Executor):
     def __init__(self, dag):
         super().__init__(dag)
+
+        # send DAG to controller
+        proto_dag = to_proto_dag(dag)
+        message = controller_pb2.Message(
+            Type=controller_pb2.CommandType.FR_DAG,
+            DAG=proto_dag,
+        )
+        actorContext.send(message)
 
     def _get_real_result(self, data: controller_pb2.Data):
         message = cluster_pb2.Message(
