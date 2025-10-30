@@ -27,27 +27,27 @@ actorContext: "ActorContext | None" = None
 
 class ActorContext:
     @staticmethod
-    def createContext(ignis_address: str = None, app_id: str = None):
+    def createContext(master_address: str = None, app_id: str = None):
         global actorContext
         if actorContext is None:
-            if ignis_address is None:
-                ignis_address = os.getenv("IGNIS_ADDR", "localhost:50051")
+            if master_address is None:
+                master_address = os.getenv("MASTER_ADDR", "localhost:50051")
             if app_id is None:
                 app_id = os.getenv("APP_ID", None)
-            actorContext = ActorContext(ignis_address, app_id)
+            actorContext = ActorContext(master_address, app_id)
         return actorContext
 
-    def __init__(self, ignis_address: str = None, app_id: str = None):
-        if ignis_address is None:
-            log.error("IGNIS_ADDR is not set")
-            raise ValueError("IGNIS_ADDR is not set")
+    def __init__(self, master_address: str = None, app_id: str = None):
+        if master_address is None:
+            log.error("MASTER_ADDR is not set")
+            raise ValueError("MASTER_ADDR is not set")
         if app_id is None:
             log.error("APP_ID is not set")
             raise ValueError("APP_ID is not set")
-        self._ignis_address = ignis_address
+        self._master_address = master_address
         self._app_id = app_id
         self._channel = grpc.insecure_channel(
-            ignis_address,
+            master_address,
             options=[("grpc.max_receive_message_length", 512 * 1024 * 1024)],
         )
         self._stub = controller_pb2_grpc.ServiceStub(self._channel)
