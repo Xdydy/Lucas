@@ -51,16 +51,16 @@ class ActorContext:
             options=[("grpc.max_receive_message_length", 512 * 1024 * 1024)],
         )
         self._stub = controller_pb2_grpc.ServiceStub(self._channel)
-        self._cluster_stub = cluster_pb2_grpc.ServiceStub(self._channel)
+        # self._cluster_stub = cluster_pb2_grpc.ServiceStub(self._channel)
         self._q = queue.Queue()
-        self._cluster_q = queue.Queue()
+        # self._cluster_q = queue.Queue()
         self._response_stream = self._stub.Session(self._generate())
-        self._cluster_resp_stream = self._cluster_stub.Session(self._cluster_generate())
+        # self._cluster_resp_stream = self._cluster_stub.Session(self._cluster_generate())
         self._result_map: dict[str, Future] = {}
         self._obj_map: dict[str, Future] = {}
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
-        self._cluster_thread = threading.Thread(target=self._run_cluster, daemon=True)
+        # self._cluster_thread = threading.Thread(target=self._run_cluster, daemon=True)
         
         # register application
         self.send(
@@ -83,7 +83,7 @@ class ActorContext:
                 break
 
         self._thread.start()
-        self._cluster_thread.start()
+        # self._cluster_thread.start()
 
     def _generate(self):
         while True:
@@ -114,17 +114,10 @@ class ActorContext:
                             future = Future()
                             future.set_result(value)
                             self._result_map[key] = future
-            time.sleep(1)
-
-    def _run_cluster(self):
-        while True:
-            for response in self._cluster_resp_stream:
-                response: cluster_pb2.Message
-                if response.Type == cluster_pb2.MessageType.OBJECT_RESPONSE:
-                    obj_response: cluster_pb2.ObjectResponse = response.ObjectResponse
-                    obj_id = obj_response.ID
-                    value = obj_response.Value
-                    value = EncDec.decode(value)
+                elif response.Type == controller_pb2.CommandType.FR_RESPONSE_OBJECT:
+                    response_object: controller_pb2.ResponseObject = response.ResponseObject
+                    obj_id = response_object.ID
+                    value = EncDec.decode(response_object.Value)
                     with self._lock:
                         if obj_id in self._obj_map:
                             future = self._obj_map[obj_id]
@@ -135,6 +128,26 @@ class ActorContext:
                             future.set_result(value)
                             self._obj_map[obj_id] = future
             time.sleep(1)
+
+    # def _run_cluster(self):
+    #     while True:
+    #         for response in self._cluster_resp_stream:
+    #             response: cluster_pb2.Message
+    #             if response.Type == cluster_pb2.MessageType.OBJECT_RESPONSE:
+    #                 obj_response: cluster_pb2.ObjectResponse = response.ObjectResponse
+    #                 obj_id = obj_response.ID
+    #                 value = obj_response.Value
+    #                 value = EncDec.decode(value)
+    #                 with self._lock:
+    #                     if obj_id in self._obj_map:
+    #                         future = self._obj_map[obj_id]
+    #                         if not future.done():
+    #                             future.set_result(value)
+    #                     else:
+    #                         future = Future()
+    #                         future.set_result(value)
+    #                         self._obj_map[obj_id] = future
+    #         time.sleep(1)
 
     def get_result(self, key: str) -> Future:
         with self._lock:
@@ -151,8 +164,8 @@ class ActorContext:
     def send(self, message: controller_pb2.Message):
         self._q.put(message)
     
-    def send_cluster(self, message: cluster_pb2.Message):
-        self._cluster_q.put(message)
+    # def send_cluster(self, message: cluster_pb2.Message):
+    #     self._cluster_q.put(message)
 
 
 class ActorRuntime(Runtime):
@@ -273,13 +286,12 @@ class ActorFunction(Function):
             key = f"{sessionID}-{self._instance_id}-{self._config.name}"
             result = actorContext.get_result(key)
             result = result.result()
-            actorContext.send_cluster(cluster_pb2.Message(
-                Type=cluster_pb2.MessageType.OBJECT_REQUEST,
-                ObjectRequest=cluster_pb2.ObjectRequest(
+            actorContext.send(controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_REQUEST_OBJECT,
+                RequestObject=controller_pb2.RequestObject(
                     ID=key,
                     Target=None,
-                    ReplyTo=None
-                )
+                ),
             ))
             result = actorContext.get_obj(key)
             result = result.result()
@@ -332,13 +344,12 @@ class ActorRuntimeInstance(ActorInstance):
         key = f"{sessionID}-{self._id}-{method_name}"
         result = actorContext.get_result(key)
         result = result.result()
-        actorContext.send_cluster(cluster_pb2.Message(
-            Type=cluster_pb2.MessageType.OBJECT_REQUEST,
-            ObjectRequest=cluster_pb2.ObjectRequest(
+        actorContext.send(controller_pb2.Message(
+            Type=controller_pb2.CommandType.FR_REQUEST_OBJECT,
+            RequestObject=controller_pb2.RequestObject(
                 ID=key,
                 Target=None,
-                ReplyTo=None
-            )
+            ),
         ))
         real_result = actorContext.get_obj(key)
         return real_result.result()
@@ -414,15 +425,14 @@ class ActorExecutor(Executor):
         actorContext.send(message)
 
     def _get_real_result(self, data: controller_pb2.Data):
-        message = cluster_pb2.Message(
-            Type = cluster_pb2.MessageType.OBJECT_REQUEST,
-            ObjectRequest = cluster_pb2.ObjectRequest(
+        message = controller_pb2.Message(
+            Type = controller_pb2.CommandType.FR_REQUEST_OBJECT,
+            RequestObject = controller_pb2.RequestObject(
                 ID = data.Ref.ID,
                 Target = None,
-                ReplyTo = None
-            )
+            ),
         )
-        actorContext.send_cluster(message)
+        actorContext.send(message)
         result_f = actorContext.get_obj(data.Ref.ID)
         result = result_f.result()
         return result
@@ -445,7 +455,7 @@ class ActorExecutor(Executor):
                             task.append(node)
 
             _end = False
-            _futures: list[Future] = []
+            _futures: set[Future] = set()
             _map_future_handler: dict[Future, Callable[[Future], Any]] = {}
             while len(task) != 0 or len(_futures) != 0:
                 if len(task) == 0:
@@ -540,7 +550,7 @@ class ActorExecutor(Executor):
                                 with _task_lock:
                                     task.append(r_node)
                         _map_future_handler[result] = set_datanode_ready
-                        _futures.append(result)
+                        _futures.add(result)
                     else:
                         r_node.set_value(result)
                         r_node.set_ready()

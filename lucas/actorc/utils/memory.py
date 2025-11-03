@@ -12,6 +12,9 @@ def parse_memory_string(memory_str):
     Returns:
         int: Memory size in bytes
     """
+    if memory_str is None:
+        return 0
+
     if isinstance(memory_str, (int, float)):
         return int(memory_str)
 
