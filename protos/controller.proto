@@ -1,0 +1,88 @@
+syntax = "proto3";
+package controller;
+
+enum MessageType {
+  UNSPECIFIED = 0; // unknown command type
+  ACK = 1; // acknowledged
+  APPEND_FUNCTION = 2; // append function
+  APPEND_FUNCTION_ARG = 3; // append function args
+  APPEND_CLASS = 4; // append class
+  APPEND_CLASS_METHOD_ARG = 5; // append class method
+  INVOKE_FUNCTION = 6; // invoke function
+}
+
+message Data {
+    enum ObjectType {
+        OBJ_UNSPECIFIED = 0;
+        OBJ_REF = 1;
+        OBJ_ENCODED = 2;
+        OBJ_STREAM = 3;
+    }
+    
+    ObjectType type = 1;
+    oneof Object {
+        string ref = 2;
+        bytes encoded = 3;
+    }
+}
+
+message Ack {
+    string message = 1; // ack message
+    string error = 2;
+}
+
+message AppendFunction {
+    string function_name = 1; // function name
+    bytes function_code = 2; // function code
+    repeated string params = 3; // function params
+    repeated string requirements = 4; // function dependencies
+}
+
+message AppendFunctionArg {
+    string session_id = 1; // current execution session
+    string instance_id = 2; // id of function instance under current execution session
+    string function_name = 3; // function name
+    string param_name = 4; // param name
+    Data value = 5; // object or ref for param
+}
+
+message AppendClass {
+    message Method {
+        string method_name = 1; // method name
+        repeated string params = 2; // method params
+    }
+    string class_name = 1; // class name
+    bytes class_code = 2; // class code
+    repeated string requirements = 3; // class dependencies
+}
+
+message AppendClassMethodArg {
+    string session_id = 1; // current execution session
+    string instance_id = 2; // id of class instance under current execution session
+    string class_name = 3; // class name
+    string method_name = 4; // method name
+    string param_name = 5; // param name
+    Data value = 6; // object or ref for param
+}
+
+message InvokeFunction {
+    string session_id = 1; // current execution session
+    string instance_id = 2; // id of function instance under current execution session
+    string function_name = 3; // function name
+}
+
+message Message {
+    MessageType type = 1;
+    oneof Message {
+        Ack ack = 2;
+        AppendFunction append_function = 3;
+        AppendFunctionArg append_function_arg = 4;
+        AppendClass append_class = 5;
+        AppendClassMethodArg append_class_method_arg = 6;
+        InvokeFunction invoke_function = 7;
+    }
+}
+
+service ControllerService {
+    rpc Session(stream Message) returns (stream Message) {}
+}

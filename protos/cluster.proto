@@ -1,0 +1,38 @@
+syntax = "proto3";
+package cluster;
+
+enum MessageType {
+    UNSPECIFIED = 0; // unknown command type
+    ACK = 1; // acknowledged
+    ADD_WORKER = 2; // add worker
+    REMOVE_WORKER = 3; // remove worker
+}
+
+message Ack {
+    string error = 1;
+}
+
+message AddWorker {
+    string worker_id = 1; // unique worker ID
+    string host = 2; // worker host
+    int32 port = 3; // worker port
+    int32 worker_rank = 4; // worker rank
+}
+
+message RemoveWorker {
+    string worker_id = 1; // unique worker ID
+}
+
+
+message Message {
+    MessageType type = 1;
+    oneof Message {
+        Ack ack = 2;
+        AddWorker add_worker = 3;
+        RemoveWorker remove_worker = 4;
+    }
+}
+
+service ClusterService {
+    rpc Session(stream Message) returns (stream Message) {}
+}
