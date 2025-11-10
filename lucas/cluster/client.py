@@ -5,9 +5,9 @@ from lucas.workflow.executor import Executor
 from lucas.workflow.dag import DAGNode, DataNode, ControlNode, ActorNode
 from lucas.utils.logging import log
 
-from .protos import controller_pb2, controller_pb2_grpc
+from .protos import controller_pb2, controller_pb2_grpc, store_pb2, store_pb2_grpc
 
-from concurrent.futures import Future, wait
+from concurrent.futures import Future, wait, FIRST_COMPLETED
 from queue import Queue
 import cloudpickle
 import grpc
@@ -79,6 +79,16 @@ class Context:
         return self._result[obj_id]
     def send(self, msg: controller_pb2.Message):
         self._msg_queue.put(msg)
+
+    def get_obj(self, refid: str):
+        channel = grpc.insecure_channel(self._master_addr)
+        stub = store_pb2_grpc.StoreServiceStub(channel)
+        resp: store_pb2.GetObjectResponse = stub.GetObject(store_pb2.GetObjectRequest(object_id=refid))
+        if resp.error != "":
+            log.error(f"Error getting object {refid}: {resp.error}")
+            return None
+        else:
+            return cloudpickle.loads(resp.object_data)
     
 class ClusterRuntime(Runtime):
     def __init__(self, metadata: Metadata):
@@ -155,13 +165,7 @@ class ClusterFunction(Function):
             session_id = str(uuid.uuid4())
             context = Context.create_context()
             for key, value in args.items():
-                if isinstance(value, controller_pb2.Data):
-                    rpc_data = value
-                else:
-                    rpc_data = controller_pb2.Data(
-                        type=controller_pb2.Data.ObjectType.OBJ,
-                        encoded=cloudpickle.dumps(value)
-                    )
+                rpc_data = transform_data(data=value)
                 context.send(controller_pb2.Message(
                     type=controller_pb2.MessageType.APPEND_FUNCTION_ARG,
                     append_function_arg=controller_pb2.AppendFunctionArg(
@@ -182,16 +186,44 @@ class ClusterFunction(Function):
             ))
 
         return cluster_function
-    
+
+
+
 class ClusterExecutor(Executor):
     def __init__(self, dag):
         super().__init__(dag)
         self._pending_tasks : list[Future] = []
         self._map_future_callback: dict[Future, Callable[[Future], Any]] = {}
     
+    def _has_pending_tasks(self):
+        return len(self._pending_tasks) > 0
+    
+    def _pending_callback(self, fut: Future):
+        self._pending_tasks.remove(fut)
+        if fut in self._map_future_callback:
+            callback = self._map_future_callback[fut]
+            callback(fut)
+            del self._map_future_callback[fut]
+    def _append_pending(self, fut: Future, callback: Callable[[Future], Any]):
+        self._pending_tasks.append(fut)
+        self._map_future_callback[fut] = callback
+
+    def _return_result(self):
+        result = None
+        for node in self.dag.get_nodes():
+            if isinstance(node, DataNode) and node._is_end_node:
+                from lucas.workflow import Lambda
+                result = node._ld.value
+                while isinstance(result, Lambda):
+                    result = result.value
+                if isinstance(result, controller_pb2.Data):
+                    result = transform_obj(result)
+            break
+        return result
     
     def execute(self):
         session_id = str(uuid.uuid4())
+        context = Context.create_context()
         task_lock = threading.Lock()
         tasks : list[DAGNode] = []
         for node in self.dag.get_nodes():
@@ -200,3 +232,91 @@ class ClusterExecutor(Executor):
             if isinstance(node, DataNode):
                 if node._ready:
                     with task_lock:
+                        tasks.append(node)
+            elif isinstance(node, ControlNode):
+                if node._ready:
+                    with task_lock:
+                        tasks.append(node)
+        
+        while len(tasks) > 0 or self._has_pending_tasks():
+            if len(tasks) == 0:
+                done, _ = wait(self._pending_tasks, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    self._pending_callback(fut)
+            with task_lock:
+                node = tasks.pop(0)
+            node._done = True
+            if isinstance(node, DataNode):
+                data = node._ld.value
+                for control_node in node.get_succ_control_nodes():
+                    control_node: ControlNode
+                    control_node_metadata = control_node.metadata()
+                    params = control_node_metadata['params']
+                    fn_type = control_node_metadata['functiontype']
+                    if fn_type == "remote":
+                        rpc_data = transform_data(data=data)
+                        message = controller_pb2.Message(
+                            type=controller_pb2.MessageType.APPEND_FUNCTION_ARG,
+                            append_function_arg=controller_pb2.AppendFunctionArg(
+                                session_id=session_id,
+                                instance_id=control_node_metadata['id'],
+                                function_name=control_node_metadata['functionname'],
+                                param_name=params[node._ld.getid()],
+                                value=rpc_data
+                            )
+                        )
+                        context.send(message)
+                    else:
+                        data = transform_obj(data)
+                        node.set_value(data)
+
+                log.info(f"{control_node.describe()} appargs {node._ld.value}")
+                if control_node.appargs(node._ld):
+                    if fn_type == "remote":
+                        control_node._datas['session_id'] = session_id
+                        control_node._datas['instance_id'] = control_node_metadata['id']
+                        control_node._datas['name'] = control_node_metadata['functionname']
+                    with task_lock:
+                        tasks.append(control_node)
+            elif isinstance(node, ControlNode):
+                fn = node._fn
+                params = node._datas
+                r_node: DataNode = node.get_data_node()
+                result = fn(params)
+                if isinstance(result, Future):
+                    def set_datanode_ready(fut: Future):
+                        nonlocal node, task_lock, tasks
+                        res = fut.result()
+                        r_node.set_value(res)
+                        r_node.set_ready()
+                        log.info(f"{node.describe()} calculate {r_node.describe()}")
+                        if r_node.is_ready():
+                            with task_lock:
+                                tasks.append(r_node)
+                    self._append_pending(result, set_datanode_ready)
+                else:
+                    r_node.set_value(result)
+                    r_node.set_ready()
+                    log.info(f"{node.describe()} calculate {r_node.describe()}")
+                    if r_node.is_ready():
+                        with task_lock:
+                            tasks.append(r_node)
+            result = self._return_result()
+            self.dag.reset()
+            return result
+        
+def transform_data(data: Any) -> controller_pb2.Data:
+    if isinstance(data, controller_pb2.Data):
+        return data
+    else:
+        return controller_pb2.Data(
+            type=controller_pb2.Data.ObjectType.OBJ_ENCODED,
+            encoded=cloudpickle.dumps(data)
+        )
+
+def transform_obj(data: controller_pb2.Data | Any) -> Any:
+    context = Context.create_context()
+    if isinstance(data, controller_pb2.Data):
+        context.get_obj(data.ref)
+    else:
+        return data
