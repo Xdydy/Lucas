@@ -29,6 +29,14 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
             obj_data = data.encoded
             obj = cloudpickle.loads(obj_data)
             return obj
+    
+    def _transmit_result(self, result, session_id, instance_id, function_name) -> controller_pb2.Data:
+        obj_id = f"{session_id}_{instance_id}_{function_name}"
+        self._data_obj[obj_id] = result
+        return controller_pb2.Data(
+            type=controller_pb2.Data.ObjectType.OBJ_REF,
+            ref=obj_id
+        )
 
     def _append_function(self, append_fn_request: controller_pb2.AppendFunction) -> controller_pb2.Message:
         function_name = append_fn_request.function_name
@@ -63,12 +71,57 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         data = self._transmit_data(args_data)
         sandbox.apply_args({param_name: data})
         log.info(f"Appended args for function: {function_name}, instance: {instance_id}")
-        return controller_pb2.Message(
-            type=controller_pb2.MessageType.ACK,
-            ack=controller_pb2.Ack(
-                message=f"Args for function {function_name}, instance {instance_id} appended successfully."
+        if sandbox.can_run():
+            log.info(f"Function {function_name} is ready to run.")
+            result = sandbox.run()
+            result_data = self._transmit_result(result, session_id, instance_id, function_name)
+            log.info(f"Invoked function: {function_name}")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.RT_RESULT,
+                return_result=controller_pb2.ReturnResult(
+                    value=result_data
+                )
             )
-        )
+        else:
+            log.info(f"Function {function_name} is not ready to run.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    message=f"Args for function {function_name}, instance {instance_id} appended successfully."
+                )
+            )
+    def _invoke_function(self, invoke_fn_request: controller_pb2.InvokeFunction) -> controller_pb2.Message:
+        function_name = invoke_fn_request.function_name
+        instance_id = invoke_fn_request.instance_id
+        if function_name not in self._funcs:
+            log.error(f"Function {function_name} not found.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                error=controller_pb2.Ack(
+                    error=f"Function {function_name} not found."
+                )
+            )
+        executor = self._funcs[function_name]
+        sandbox = executor.create_instance(instance_id)
+        sandbox.set_run()
+        if sandbox.can_run():
+            result = sandbox.run()
+            result_data = self._transmit_result(result, invoke_fn_request.session_id, instance_id, function_name)
+            log.info(f"Invoked function: {function_name}")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.RT_RESULT,
+                return_result=controller_pb2.ReturnResult(
+                    value=result_data
+                )
+            )
+        else:
+            log.info(f"Function {function_name} is not ready to run.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    message=f"Function {function_name} is not ready to run."
+                )
+            )
     def Session(self, request_iterator, context):
         for request in request_iterator:
             request: controller_pb2.Message
@@ -77,6 +130,8 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
                 resp = self._append_function(request.append_function)
             elif request.type == controller_pb2.MessageType.APPEND_FUNCTION_ARG:
                 resp = self._append_function_arg(request.append_function_arg)
+            elif request.type == controller_pb2.MessageType.INVOKE_FUNCTION:
+                resp = self._invoke_function(request.invoke_function)
             yield resp
 
 class Master(cluster_pb2_grpc.ClusterServiceServicer):

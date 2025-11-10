@@ -9,6 +9,7 @@ enum MessageType {
   APPEND_CLASS = 4; // append class
   APPEND_CLASS_METHOD_ARG = 5; // append class method
   INVOKE_FUNCTION = 6; // invoke function
+  RT_RESULT = 7; // return result
 }
 
 message Data {
@@ -71,6 +72,16 @@ message InvokeFunction {
     string function_name = 3; // function name
 }
 
+message ReturnResult {
+    string session_id = 1; // current execution session
+    string instance_id = 2; // id of function instance under current execution session
+    string function_name = 3; // function name
+    oneof result {
+        Data value = 4; // success: return result
+        string error = 5; // fail: return error
+    }
+}
+
 message Message {
     MessageType type = 1;
     oneof Message {
@@ -80,6 +91,7 @@ message Message {
         AppendClass append_class = 5;
         AppendClassMethodArg append_class_method_arg = 6;
         InvokeFunction invoke_function = 7;
+        ReturnResult return_result = 8;
     }
 }
 
