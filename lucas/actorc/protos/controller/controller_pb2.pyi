@@ -3,7 +3,8 @@ from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Iterable as _Iterable, Mapping as _Mapping, Optional as _Optional, Union as _Union
+from collections.abc import Iterable as _Iterable, Mapping as _Mapping
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
@@ -25,6 +26,7 @@ class CommandType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     FR_MARK_DAG_NODE_DONE: _ClassVar[CommandType]
     FR_REQUEST_OBJECT: _ClassVar[CommandType]
     BK_RESPONSE_OBJECT: _ClassVar[CommandType]
+    FR_RESPONSE_OBJECT: _ClassVar[CommandType]
 UNSPECIFIED: CommandType
 ACK: CommandType
 FR_READY: CommandType
@@ -41,6 +43,7 @@ FR_DAG: CommandType
 FR_MARK_DAG_NODE_DONE: CommandType
 FR_REQUEST_OBJECT: CommandType
 BK_RESPONSE_OBJECT: CommandType
+FR_RESPONSE_OBJECT: CommandType
 
 class Ack(_message.Message):
     __slots__ = ("Error",)

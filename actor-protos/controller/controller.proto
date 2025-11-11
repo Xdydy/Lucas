@@ -21,6 +21,7 @@ enum CommandType {
   FR_MARK_DAG_NODE_DONE = 13; // frontend: notify DAG node done
   FR_REQUEST_OBJECT=14; // frontend: request object from object store
   BK_RESPONSE_OBJECT=15; // backend: response object to request object
+  FR_RESPONSE_OBJECT=16; // frontend: response object to request object
 }
 
 message Ack {
