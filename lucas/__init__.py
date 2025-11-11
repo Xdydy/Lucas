@@ -94,7 +94,15 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
         fn_name = kwargs.get('name', fn.__name__)
         cpu = kwargs.get('cpu', 1)
         memory = kwargs.get('memory', 128)
-        
+        dependency = kwargs.get('dependency', [])
+
+        kwargs.update({
+            'provider': provider,
+            'name': fn_name,
+            'cpu': cpu,
+            'memory': memory,
+            'dependency': dependency
+        })
         func_cls = kwargs.get('wrapper', None)
         fn_config = FunctionConfig(**kwargs)
         if provider == 'local':
@@ -105,6 +113,9 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
             func = KnativeFunction(fn, fn_config)
         elif provider == 'local-once':
             func = LocalOnceFunction(fn, fn_config)
+        elif provider == 'cluster':
+            from lucas.cluster.client import ClusterFunction
+            func = ClusterFunction(fn, fn_config)
         else:
             assert func_cls != None, "wrapper is required for custom runtime"
             assert issubclass(func_cls, Function), "wrapper must be subclass of Function"

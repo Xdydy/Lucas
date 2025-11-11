@@ -1,0 +1,35 @@
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from typing import ClassVar as _ClassVar, Optional as _Optional
+
+DESCRIPTOR: _descriptor.FileDescriptor
+
+class GetObjectRequest(_message.Message):
+    __slots__ = ("ref",)
+    REF_FIELD_NUMBER: _ClassVar[int]
+    ref: str
+    def __init__(self, ref: _Optional[str] = ...) -> None: ...
+
+class GetObjectResponse(_message.Message):
+    __slots__ = ("data", "error")
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    data: bytes
+    error: str
+    def __init__(self, data: _Optional[bytes] = ..., error: _Optional[str] = ...) -> None: ...
+
+class PutObjectRequest(_message.Message):
+    __slots__ = ("data", "key")
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    KEY_FIELD_NUMBER: _ClassVar[int]
+    data: bytes
+    key: str
+    def __init__(self, data: _Optional[bytes] = ..., key: _Optional[str] = ...) -> None: ...
+
+class PutObjectResponse(_message.Message):
+    __slots__ = ("ref", "error")
+    REF_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    ref: str
+    error: str
+    def __init__(self, ref: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...
