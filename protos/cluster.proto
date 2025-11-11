@@ -9,7 +9,8 @@ enum MessageType {
 }
 
 message Ack {
-    string error = 1;
+    string message = 1; // acknowledgment message
+    string error = 2; // error message, if any
 }
 
 message AddWorker {
@@ -35,4 +36,6 @@ message Message {
 
 service ClusterService {
     rpc Session(stream Message) returns (stream Message) {}
+    rpc AddWorkerCommand(AddWorker) returns (Ack) {}
+    rpc RemoveWorkerCommand(RemoveWorker) returns (Ack) {}
 }

@@ -18,10 +18,12 @@ ADD_WORKER: MessageType
 REMOVE_WORKER: MessageType
 
 class Ack(_message.Message):
-    __slots__ = ("error",)
+    __slots__ = ("message", "error")
+    MESSAGE_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
+    message: str
     error: str
-    def __init__(self, error: _Optional[str] = ...) -> None: ...
+    def __init__(self, message: _Optional[str] = ..., error: _Optional[str] = ...) -> None: ...
 
 class AddWorker(_message.Message):
     __slots__ = ("worker_id", "host", "port", "worker_rank")

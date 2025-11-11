@@ -53,7 +53,7 @@ class Context:
                 log.warning(f"Unknown response type: {resp.type}")
 
     def _handle_rt_result(self, rt_result: controller_pb2.ReturnResult):
-        log.info(f"Received runtime result: {rt_result.value}")
+        log.debug(f"Received runtime result: {rt_result.value}")
         if rt_result.value.type == controller_pb2.Data.ObjectType.OBJ_REF:
             obj_id = rt_result.value.ref
             with self._result_lock:
@@ -67,7 +67,9 @@ class Context:
             log.warning(f"Received non-object result: {rt_result.value}")
 
     def _handle_ack(self, ack: controller_pb2.Ack):
-        log.info(f"Received ACK: {ack.message}")
+        # log.info(f"Received ACK: {ack.message}")
+        if ack.error != "":
+            log.error(f"Error in ACK: {ack.error}")
 
     def wait_for_result(self, obj_id: str) -> Future:
         with self._result_lock:
@@ -83,12 +85,12 @@ class Context:
     def get_obj(self, refid: str):
         channel = grpc.insecure_channel(self._master_addr)
         stub = store_pb2_grpc.StoreServiceStub(channel)
-        resp: store_pb2.GetObjectResponse = stub.GetObject(store_pb2.GetObjectRequest(object_id=refid))
+        resp: store_pb2.GetObjectResponse = stub.GetObject(store_pb2.GetObjectRequest(ref=refid))
         if resp.error != "":
             log.error(f"Error getting object {refid}: {resp.error}")
             return None
         else:
-            return cloudpickle.loads(resp.object_data)
+            return cloudpickle.loads(resp.data)
     
 class ClusterRuntime(Runtime):
     def __init__(self, metadata: Metadata):
@@ -184,6 +186,10 @@ class ClusterFunction(Function):
                     function_name=fn.__name__,
                 )
             ))
+            key = f"{session_id}_{session_id}_{fn.__name__}"
+            data: controller_pb2.Data = context.wait_for_result(key).result()
+            return transform_obj(data)
+
 
         return cluster_function
 
@@ -317,6 +323,6 @@ def transform_data(data: Any) -> controller_pb2.Data:
 def transform_obj(data: controller_pb2.Data | Any) -> Any:
     context = Context.create_context()
     if isinstance(data, controller_pb2.Data):
-        context.get_obj(data.ref)
+        return context.get_obj(data.ref)
     else:
         return data

@@ -2,20 +2,21 @@ syntax = "proto3";
 package store;
 
 message GetObjectRequest {
-    string object_ref = 1; // reference to the object to retrieve
+    string ref = 1; // reference to the object to retrieve
 }
 
 message GetObjectResponse {
-    bytes object_data = 1; // serialized object data
+    bytes data = 1; // serialized object data
     string error = 2; // error message, if any
 }
 
 message PutObjectRequest {
-    bytes object_data = 1; // serialized object data to store
+    bytes data = 1; // serialized object data to store
+    string key = 2; // optional key for the object
 }
 
 message PutObjectResponse {
-    string object_ref = 1; // reference to the stored object
+    string ref = 1; // reference to the stored object
     string error = 2; // error message, if any
 }
 

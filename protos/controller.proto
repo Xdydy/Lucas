@@ -1,4 +1,6 @@
 syntax = "proto3";
+
+import "google/protobuf/empty.proto";
 package controller;
 
 enum MessageType {
@@ -97,4 +99,5 @@ message Message {
 
 service ControllerService {
     rpc Session(stream Message) returns (stream Message) {}
+    rpc Ping(google.protobuf.Empty) returns (Ack) {}
 }

@@ -5,7 +5,7 @@ import warnings
 
 import cluster_pb2 as cluster__pb2
 
-GRPC_GENERATED_VERSION = '1.75.0'
+GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in cluster_pb2_grpc.py depends on'
+        + ' but the generated code in cluster_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -39,12 +39,34 @@ class ClusterServiceStub(object):
                 request_serializer=cluster__pb2.Message.SerializeToString,
                 response_deserializer=cluster__pb2.Message.FromString,
                 _registered_method=True)
+        self.AddWorkerCommand = channel.unary_unary(
+                '/cluster.ClusterService/AddWorkerCommand',
+                request_serializer=cluster__pb2.AddWorker.SerializeToString,
+                response_deserializer=cluster__pb2.Ack.FromString,
+                _registered_method=True)
+        self.RemoveWorkerCommand = channel.unary_unary(
+                '/cluster.ClusterService/RemoveWorkerCommand',
+                request_serializer=cluster__pb2.RemoveWorker.SerializeToString,
+                response_deserializer=cluster__pb2.Ack.FromString,
+                _registered_method=True)
 
 
 class ClusterServiceServicer(object):
     """Missing associated documentation comment in .proto file."""
 
     def Session(self, request_iterator, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AddWorkerCommand(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RemoveWorkerCommand(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -57,6 +79,16 @@ def add_ClusterServiceServicer_to_server(servicer, server):
                     servicer.Session,
                     request_deserializer=cluster__pb2.Message.FromString,
                     response_serializer=cluster__pb2.Message.SerializeToString,
+            ),
+            'AddWorkerCommand': grpc.unary_unary_rpc_method_handler(
+                    servicer.AddWorkerCommand,
+                    request_deserializer=cluster__pb2.AddWorker.FromString,
+                    response_serializer=cluster__pb2.Ack.SerializeToString,
+            ),
+            'RemoveWorkerCommand': grpc.unary_unary_rpc_method_handler(
+                    servicer.RemoveWorkerCommand,
+                    request_deserializer=cluster__pb2.RemoveWorker.FromString,
+                    response_serializer=cluster__pb2.Ack.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -86,6 +118,60 @@ class ClusterService(object):
             '/cluster.ClusterService/Session',
             cluster__pb2.Message.SerializeToString,
             cluster__pb2.Message.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AddWorkerCommand(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/cluster.ClusterService/AddWorkerCommand',
+            cluster__pb2.AddWorker.SerializeToString,
+            cluster__pb2.Ack.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RemoveWorkerCommand(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/cluster.ClusterService/RemoveWorkerCommand',
+            cluster__pb2.RemoveWorker.SerializeToString,
+            cluster__pb2.Ack.FromString,
             options,
             channel_credentials,
             insecure,

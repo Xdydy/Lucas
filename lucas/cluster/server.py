@@ -1,30 +1,89 @@
 import grpc
 import cloudpickle
 import uuid
+import threading
 from lucas.utils.logging import log
 from concurrent import futures
-from .protos import cluster_pb2_grpc, cluster_pb2, controller_pb2, controller_pb2_grpc
+from .protos import cluster_pb2_grpc, cluster_pb2, controller_pb2, controller_pb2_grpc, store_pb2, store_pb2_grpc
 from .executor import ExecutorSandBox, FunctionExecutor, ClassExecutor
 
 from argparse import ArgumentParser
 from queue import Queue
+from typing import Any
+from google.protobuf import empty_pb2
+
+class ContollerContext:
+    def __init__(self, peer_address: str):
+        self._peer_address = peer_address
+        self._channel = grpc.insecure_channel(peer_address)
+        self._stub = controller_pb2_grpc.ControllerServiceStub(self._channel)
+        self._msg_queue = Queue()
+        self._resp_stream = self._stub.Session(self._message_generator())
+        self._result_lock = threading.Lock()
+        self._results = {}
+        self._resp_thread = threading.Thread(target=self._receive_messages, daemon=True)
+        self._resp_thread.start()
+        self._test()
+    def _test(self):
+        resp: controller_pb2.Ack = self._stub.Ping(empty_pb2.Empty())
+        log.info(f"Received response from controller: {resp.message}")
+    def _message_generator(self):
+        while True:
+            msg = self._msg_queue.get()
+            if msg is None:
+                break
+            yield msg
+    def send_message(self, msg: controller_pb2.Message):
+        self._msg_queue.put(msg)
+    def _receive_messages(self):
+        for response in self._resp_stream:
+            response: controller_pb2.Message
+            if response.type == controller_pb2.MessageType.RT_RESULT:
+                self._handle_rt_result(response.return_result)
+            elif response.type == controller_pb2.MessageType.ACK:
+                self._handle_ack(response.ack)
+            else:
+                log.warning(f"Unknown response type: {response.type}")
+    def _handle_rt_result(self, rt_result: controller_pb2.ReturnResult):
+        log.debug(f"Received runtime result: {rt_result.value}")
+        if rt_result.value.type == controller_pb2.Data.ObjectType.OBJ_REF:
+            obj_id = rt_result.value.ref
+            with self._result_lock:
+                self._results[obj_id] = None  # Placeholder for the result
+        else:
+            log.warning(f"Received non-object result: {rt_result.value}")
+    def _handle_ack(self, ack: controller_pb2.Ack):
+        if ack.error != "":
+            log.error(f"Error in ACK: {ack.error}")
+        else:
+            log.info(f"Received ACK: {ack.message}")
+    def wait_for_result(self, obj_id: str) -> futures.Future:
+        with self._result_lock:
+            if obj_id in self._results:
+                future = futures.Future()
+                future.set_result(self._results[obj_id])
+                return future
+            else:
+                future = futures.Future()
+                self._results[obj_id] = future
+                return future
 
 class Controller(controller_pb2_grpc.ControllerServiceServicer):
-    def __init__(self):
+    def __init__(self, data_store: "StorageService"):
         super().__init__()
         self._funcs: dict[str, FunctionExecutor] = {}
         self._classes: dict[str, ClassExecutor] = {}
         self._pending_funcs = []
-        self._data_obj = {}
+        self._data_store = data_store
 
     def _transmit_data(self, data: controller_pb2.Data):
         data_type = data.type
         if data_type == controller_pb2.Data.ObjectType.OBJ_REF:
             obj_id = data.ref
-            if obj_id not in self._data_obj:
+            if self._data_store.get(obj_id) is None:
                 log.error(f"Object reference {obj_id} not found.")
                 raise RuntimeError(f"Object reference {obj_id} not found.")
-            return self._data_obj[obj_id]
+            return self._data_store.get(obj_id)
         elif data_type == controller_pb2.Data.ObjectType.OBJ_ENCODED:
             obj_data = data.encoded
             obj = cloudpickle.loads(obj_data)
@@ -32,7 +91,7 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
     
     def _transmit_result(self, result, session_id, instance_id, function_name) -> controller_pb2.Data:
         obj_id = f"{session_id}_{instance_id}_{function_name}"
-        self._data_obj[obj_id] = result
+        self._data_store.put(obj_id, result)
         return controller_pb2.Data(
             type=controller_pb2.Data.ObjectType.OBJ_REF,
             ref=obj_id
@@ -133,6 +192,39 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
             elif request.type == controller_pb2.MessageType.INVOKE_FUNCTION:
                 resp = self._invoke_function(request.invoke_function)
             yield resp
+    def Ping(self, request, context):
+        return controller_pb2.Ack(
+            message="Pong")
+
+class StorageService(store_pb2_grpc.StoreServiceServicer):
+    def __init__(self):
+        super().__init__()
+        self._data_store = {}
+
+    def GetObject(self, request, context):
+        request: store_pb2.GetObjectRequest
+        key = request.ref
+        data = self.get(key)
+        if data is None:
+            return store_pb2.GetObjectResponse(
+                error=f"Object with key {key} not found."
+            )
+        return store_pb2.GetObjectResponse(data=cloudpickle.dumps(data))
+    
+    def PutObject(self, request, context):
+        request: store_pb2.PutObjectRequest
+        data = request.data
+        key = request.key
+        self.put(key, data)
+        return store_pb2.PutObjectResponse(ref=key)
+    
+    def put(self, key: str, data: Any):
+        self._data_store[key] = data
+        log.info(f"Data stored with key: {key}")
+    def get(self, key: str) -> Any:
+        if key not in self._data_store:
+            return None
+        return self._data_store[key]
 
 class Master(cluster_pb2_grpc.ClusterServiceServicer):
     class WorkerMetadata:
@@ -161,6 +253,12 @@ class Master(cluster_pb2_grpc.ClusterServiceServicer):
                 )
                 self._workers[add_worker_request.worker_id] = worker_metadata
                 log.info(f"Worker {add_worker_request.worker_id} added.")
+                yield cluster_pb2.Message(
+                    type=cluster_pb2.MessageType.ACK,
+                    ack=cluster_pb2.Ack(
+                        message=f"Worker {add_worker_request.worker_id} added successfully."
+                    )
+                )
             elif request.type == cluster_pb2.MessageType.REMOVE_WORKER:
                 remove_worker_request = request.remove_worker
                 if remove_worker_request.worker_id in self._workers:
@@ -169,6 +267,39 @@ class Master(cluster_pb2_grpc.ClusterServiceServicer):
             else:
                 log.error(f"Unknown message type received: {request.type}")
 
+    def AddWorkerCommand(self, request, context):
+        return self.addWorker(request)
+    
+
+    
+    def addWorker(self, add_worker_request: cluster_pb2.AddWorker):
+        worker_metadata = Master.WorkerMetadata(
+            add_worker_request.host,
+            add_worker_request.port,
+            add_worker_request.worker_id,
+            add_worker_request.worker_rank
+        )
+        self._workers[add_worker_request.worker_id] = worker_metadata
+        log.info(f"Worker {add_worker_request.worker_id} added.")
+        context = ContollerContext(f"{add_worker_request.host}:{add_worker_request.port}")
+        return cluster_pb2.Ack(
+            message=f"Worker {add_worker_request.worker_id} added successfully."
+        )
+    def removeWorker(self, remove_worker_request: cluster_pb2.RemoveWorker):
+        if remove_worker_request.worker_id in self._workers:
+            del self._workers[remove_worker_request.worker_id]
+            log.info(f"Worker {remove_worker_request.worker_id} removed.")
+            return cluster_pb2.Ack(
+                message=f"Worker {remove_worker_request.worker_id} removed successfully."
+            )
+        else:
+            log.error(f"Worker {remove_worker_request.worker_id} not found.")
+            return cluster_pb2.Ack(
+                error=f"Worker {remove_worker_request.worker_id} not found."
+            )
+
+    def RemoveWorkerCommand(self, request, context):
+        return self.removeWorker(request)
 
 class Worker:
     def __init__(self, master_address: str, worker_host: str, worker_port: int,controller: Controller, rank=1):
@@ -179,38 +310,21 @@ class Worker:
         self._worker_port = worker_port
         self._rank = rank
         self._controller = controller
+        self._connect_to_master()
     def _connect_to_master(self):
         self._channel = grpc.insecure_channel(self._master_address)
         self._stub = cluster_pb2_grpc.ClusterServiceStub(self._channel)
-        self._cluster_msg_queue = Queue()
         # communicate to master
-        self._resp_stream = self._stub.Session(self._generate_cluster_session_messages())
-    
-    def _receive_cluster_messages(self):
-        for response in self._resp_stream:
-            log.info(f"Received cluster message: {response}")
-            # Handle different types of messages from the master
-            response: cluster_pb2.Message
-            if response.type == cluster_pb2.MessageType.ACK:
-                # Process the message accordingly
-                pass
-
-    def _generate_cluster_session_messages(self):
-        # Example of sending an ADD_WORKER message
-        add_worker_msg = cluster_pb2.Message(
-            type=cluster_pb2.MessageType.ADD_WORKER,
-            add_worker=cluster_pb2.AddWorker(
-                host=self._worker_host,
-                port=self._worker_port,
-                worker_id=self._worker_id,
-                worker_rank=self._rank
-            )
-        )
-        yield add_worker_msg
-        # Additional messages can be yielded here
-        while True:
-            msg = self._cluster_msg_queue.get()
-            yield msg
+        resp : cluster_pb2.Ack = self._stub.AddWorkerCommand(cluster_pb2.AddWorker(
+            host=self._worker_host,
+            port=self._worker_port,
+            worker_id=self._worker_id,
+            worker_rank=self._rank
+        ))
+        if resp.error != "":
+            log.error(f"Error adding worker: {resp.error}")
+        else:
+            log.info(resp.message)
 
 
 
@@ -221,25 +335,32 @@ if __name__ == "__main__":
     master_parser = role_parser.add_parser("master", help="Start the master server")
     worker_parser = role_parser.add_parser("worker", help="Start a worker server")
 
-    master_parser.add_argument("port", type=int, help="Port for the master server to listen on")
+    master_parser.add_argument("--port", type=int, help="Port for the master server to listen on")
 
-    worker_parser.add_argument("master_address", type=str, help="Address of the master server", required=True)
-    worker_parser.add_argument("worker_host", type=str, help="Host for the worker server", required=True)
-    worker_parser.add_argument("worker_port", type=int, help="Port for the worker server to listen on", required=True)
-    worker_parser.add_argument("rank", type=int, help="Rank of the worker", default=1)
+    worker_parser.add_argument("--master_address", type=str, help="Address of the master server", required=True)
+    worker_parser.add_argument("--worker_host", type=str, help="Host for the worker server", required=True)
+    worker_parser.add_argument("--worker_port", type=int, help="Port for the worker server to listen on", required=True)
+    worker_parser.add_argument("--rank", type=int, help="Rank of the worker", default=1)
 
     args = arg_parser.parse_args()
-    controller = Controller()
+    store_service = StorageService()
+    controller = Controller(store_service)
     if args.role == "master":
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        store_pb2_grpc.add_StoreServiceServicer_to_server(store_service, server)
         cluster_pb2_grpc.add_ClusterServiceServicer_to_server(Master(controller), server)
-        controller_pb2_grpc.add_ControllerServiceServicer_to_server(controller)
+        controller_pb2_grpc.add_ControllerServiceServicer_to_server(controller, server)
         server.add_insecure_port(f"[::]:{args.port}")
         server.start()
         log.info(f"Master server started on port {args.port}")
         server.wait_for_termination()
     elif args.role == "worker":
         # Worker implementation would go here
+        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        controller_pb2_grpc.add_ControllerServiceServicer_to_server(controller, server)
+        store_pb2_grpc.add_StoreServiceServicer_to_server(store_service, server)
+        server.add_insecure_port(f"[::]:{args.worker_port}")
+        server.start()
         worker = Worker(
             master_address=args.master_address,
             worker_host=args.worker_host,
@@ -247,9 +368,4 @@ if __name__ == "__main__":
             controller=controller,
             rank=args.rank
         )
-        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-        controller_pb2_grpc.add_ControllerServiceServicer_to_server(controller, server)
-        server.add_insecure_port(f"[::]:{args.worker_address}")
-        server.start()
-        server.wait_for_termination()        
-        log.info(f"Worker server started on port {args.worker_address}, connected to master at {args.master_address}")
+        server.wait_for_termination()
