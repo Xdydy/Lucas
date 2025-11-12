@@ -1,11 +1,12 @@
 syntax = "proto3";
 package cluster;
 
+import "controller.proto";
+
 enum MessageType {
     UNSPECIFIED = 0; // unknown command type
     ACK = 1; // acknowledged
-    ADD_WORKER = 2; // add worker
-    REMOVE_WORKER = 3; // remove worker
+    APPLY_TO_WORKER = 2; // apply message to worker
 }
 
 message Ack {
@@ -24,13 +25,24 @@ message RemoveWorker {
     string worker_id = 1; // unique worker ID
 }
 
+message GetWorkersRequest {
+    // No fields needed for this request
+}
+
+message GetWorkersResponse {
+    repeated AddWorker workers = 1; // list of workers
+}
+
+message ApplyToWorker {
+    string worker_id = 1; // unique worker ID
+    controller.Message controller_message = 2; // message to apply to the worker
+}
 
 message Message {
     MessageType type = 1;
     oneof Message {
         Ack ack = 2;
-        AddWorker add_worker = 3;
-        RemoveWorker remove_worker = 4;
+        ApplyToWorker apply_to_worker = 3;
     }
 }
 
@@ -38,4 +50,5 @@ service ClusterService {
     rpc Session(stream Message) returns (stream Message) {}
     rpc AddWorkerCommand(AddWorker) returns (Ack) {}
     rpc RemoveWorkerCommand(RemoveWorker) returns (Ack) {}
+    rpc GetWorkers(GetWorkersRequest) returns (GetWorkersResponse) {}
 }

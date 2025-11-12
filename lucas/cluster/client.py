@@ -6,6 +6,7 @@ from lucas.workflow.dag import DAGNode, DataNode, ControlNode, ActorNode
 from lucas.utils.logging import log
 
 from .protos import controller_pb2, controller_pb2_grpc, store_pb2, store_pb2_grpc
+from .scheduler import Scheduler
 
 from concurrent.futures import Future, wait, FIRST_COMPLETED
 from queue import Queue
@@ -34,6 +35,11 @@ class Context:
         self._resp_stream = self._stub.Session(self._message_generator())
         self._resp_thread = threading.Thread(target=self._handle_responses, daemon=True)
         self._resp_thread.start()
+    
+    def set_scheduler(self, scheduler: Scheduler):
+        if self._scheduler is not None:
+            self._scheduler.shutdown()
+        self._scheduler = scheduler
     
     def _message_generator(self):
         while True:

@@ -49,6 +49,11 @@ class ClusterServiceStub(object):
                 request_serializer=cluster__pb2.RemoveWorker.SerializeToString,
                 response_deserializer=cluster__pb2.Ack.FromString,
                 _registered_method=True)
+        self.GetWorkers = channel.unary_unary(
+                '/cluster.ClusterService/GetWorkers',
+                request_serializer=cluster__pb2.GetWorkersRequest.SerializeToString,
+                response_deserializer=cluster__pb2.GetWorkersResponse.FromString,
+                _registered_method=True)
 
 
 class ClusterServiceServicer(object):
@@ -72,6 +77,12 @@ class ClusterServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetWorkers(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ClusterServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -89,6 +100,11 @@ def add_ClusterServiceServicer_to_server(servicer, server):
                     servicer.RemoveWorkerCommand,
                     request_deserializer=cluster__pb2.RemoveWorker.FromString,
                     response_serializer=cluster__pb2.Ack.SerializeToString,
+            ),
+            'GetWorkers': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetWorkers,
+                    request_deserializer=cluster__pb2.GetWorkersRequest.FromString,
+                    response_serializer=cluster__pb2.GetWorkersResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -172,6 +188,33 @@ class ClusterService(object):
             '/cluster.ClusterService/RemoveWorkerCommand',
             cluster__pb2.RemoveWorker.SerializeToString,
             cluster__pb2.Ack.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetWorkers(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/cluster.ClusterService/GetWorkers',
+            cluster__pb2.GetWorkersRequest.SerializeToString,
+            cluster__pb2.GetWorkersResponse.FromString,
             options,
             channel_credentials,
             insecure,
