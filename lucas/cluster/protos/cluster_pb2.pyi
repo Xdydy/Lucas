@@ -13,9 +13,13 @@ class MessageType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     UNSPECIFIED: _ClassVar[MessageType]
     ACK: _ClassVar[MessageType]
     APPLY_TO_WORKER: _ClassVar[MessageType]
+    BROADCAST: _ClassVar[MessageType]
+    RT_RESULT: _ClassVar[MessageType]
 UNSPECIFIED: MessageType
 ACK: MessageType
 APPLY_TO_WORKER: MessageType
+BROADCAST: MessageType
+RT_RESULT: MessageType
 
 class Ack(_message.Message):
     __slots__ = ("message", "error")
@@ -61,12 +65,28 @@ class ApplyToWorker(_message.Message):
     controller_message: _controller_pb2.Message
     def __init__(self, worker_id: _Optional[str] = ..., controller_message: _Optional[_Union[_controller_pb2.Message, _Mapping]] = ...) -> None: ...
 
+class Broadcast(_message.Message):
+    __slots__ = ("controller_message",)
+    CONTROLLER_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    controller_message: _controller_pb2.Message
+    def __init__(self, controller_message: _Optional[_Union[_controller_pb2.Message, _Mapping]] = ...) -> None: ...
+
+class ReturnResult(_message.Message):
+    __slots__ = ("controller_message",)
+    CONTROLLER_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    controller_message: _controller_pb2.Message
+    def __init__(self, controller_message: _Optional[_Union[_controller_pb2.Message, _Mapping]] = ...) -> None: ...
+
 class Message(_message.Message):
-    __slots__ = ("type", "ack", "apply_to_worker")
+    __slots__ = ("type", "ack", "apply_to_worker", "broadcast", "return_result")
     TYPE_FIELD_NUMBER: _ClassVar[int]
     ACK_FIELD_NUMBER: _ClassVar[int]
     APPLY_TO_WORKER_FIELD_NUMBER: _ClassVar[int]
+    BROADCAST_FIELD_NUMBER: _ClassVar[int]
+    RETURN_RESULT_FIELD_NUMBER: _ClassVar[int]
     type: MessageType
     ack: Ack
     apply_to_worker: ApplyToWorker
-    def __init__(self, type: _Optional[_Union[MessageType, str]] = ..., ack: _Optional[_Union[Ack, _Mapping]] = ..., apply_to_worker: _Optional[_Union[ApplyToWorker, _Mapping]] = ...) -> None: ...
+    broadcast: Broadcast
+    return_result: ReturnResult
+    def __init__(self, type: _Optional[_Union[MessageType, str]] = ..., ack: _Optional[_Union[Ack, _Mapping]] = ..., apply_to_worker: _Optional[_Union[ApplyToWorker, _Mapping]] = ..., broadcast: _Optional[_Union[Broadcast, _Mapping]] = ..., return_result: _Optional[_Union[ReturnResult, _Mapping]] = ...) -> None: ...

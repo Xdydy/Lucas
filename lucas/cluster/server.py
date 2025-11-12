@@ -12,14 +12,19 @@ from queue import Queue
 from typing import Any
 from google.protobuf import empty_pb2
 
-class ContollerContext:
+class ControllerContext:
     def __init__(self, peer_address: str):
         self._peer_address = peer_address
         self._channel = grpc.insecure_channel(peer_address)
         self._stub = controller_pb2_grpc.ControllerServiceStub(self._channel)
+        # store stub to fetch object bytes from remote controller's store service
+        self._store_stub = store_pb2_grpc.StoreServiceStub(self._channel)
         self._msg_queue = Queue()
+        # queue where this ControllerContext will publish incoming controller responses
+        self._outgoing_queue = Queue()
         self._resp_stream = self._stub.Session(self._message_generator())
         self._result_lock = threading.Lock()
+        # map obj_id -> concurrent.futures.Future
         self._results = {}
         self._resp_thread = threading.Thread(target=self._receive_messages, daemon=True)
         self._resp_thread.start()
@@ -44,6 +49,14 @@ class ContollerContext:
                 self._handle_ack(response.ack)
             else:
                 log.warning(f"Unknown response type: {response.type}")
+            # publish raw controller message to outgoing queue for master/session forwarding
+            try:
+                self._outgoing_queue.put(response)
+            except Exception:
+                log.exception("Failed to put controller response into outgoing queue")
+
+    def get_outgoing_queue(self):
+        return self._outgoing_queue
     def _handle_rt_result(self, rt_result: controller_pb2.ReturnResult):
         log.debug(f"Received runtime result: {rt_result.value}")
         if rt_result.value.type == controller_pb2.Data.ObjectType.OBJ_REF:
@@ -55,8 +68,6 @@ class ContollerContext:
     def _handle_ack(self, ack: controller_pb2.Ack):
         if ack.error != "":
             log.error(f"Error in ACK: {ack.error}")
-        else:
-            log.info(f"Received ACK: {ack.message}")
     def wait_for_result(self, obj_id: str) -> futures.Future:
         with self._result_lock:
             if obj_id in self._results:
@@ -181,16 +192,20 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
                     message=f"Function {function_name} is not ready to run."
                 )
             )
+
+    def apply(self, request) -> controller_pb2.Message:
+        request: controller_pb2.Message
+        log.info(f"Received controller message: {request}")
+        if request.type == controller_pb2.MessageType.APPEND_FUNCTION:
+            resp = self._append_function(request.append_function)
+        elif request.type == controller_pb2.MessageType.APPEND_FUNCTION_ARG:
+            resp = self._append_function_arg(request.append_function_arg)
+        elif request.type == controller_pb2.MessageType.INVOKE_FUNCTION:
+            resp = self._invoke_function(request.invoke_function)
+        return resp
     def Session(self, request_iterator, context):
         for request in request_iterator:
-            request: controller_pb2.Message
-            log.info(f"Received controller message: {request}")
-            if request.type == controller_pb2.MessageType.APPEND_FUNCTION:
-                resp = self._append_function(request.append_function)
-            elif request.type == controller_pb2.MessageType.APPEND_FUNCTION_ARG:
-                resp = self._append_function_arg(request.append_function_arg)
-            elif request.type == controller_pb2.MessageType.INVOKE_FUNCTION:
-                resp = self._invoke_function(request.invoke_function)
+            resp = self.apply(request)
             yield resp
     def Ping(self, request, context):
         return controller_pb2.Ack(
@@ -227,45 +242,154 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
         return self._data_store[key]
 
 class Master(cluster_pb2_grpc.ClusterServiceServicer):
-    class WorkerMetadata:
+    class ControllerMetadata:
         def __init__(self, host: str, port: int, worker_id: str, rank: int):
             self._host = host
             self._port = port
             self._worker_id = worker_id
             self._rank = rank
+            self._controller = ControllerContext(f"{host}:{port}")
             
     def __init__(self, controller: Controller):
         super().__init__()
-        self._workers: dict[str, Master.WorkerMetadata] = {}
+        self._controllers: dict[str, Master.ControllerMetadata] = {}
         self._controller = controller
 
+    def _apply_to_worker(self, apply_to_worker_request: cluster_pb2.ApplyToWorker):
+        worker_id = apply_to_worker_request.worker_id
+        controller_message = apply_to_worker_request.controller_message
+        if worker_id == None or worker_id not in self._controllers:
+            # Master Controller
+            # apply locally and convert controller response to cluster Message
+            resp = self._controller.apply(controller_message)
+            return resp
+        else:
+            context = self._controllers[worker_id]._controller
+            context.send_message(controller_message)
+
+    def _broadcast(self, broadcast_request: cluster_pb2.Broadcast) -> cluster_pb2.Message:
+        controller_message = broadcast_request.controller_message
+        self._controller.broadcast(controller_message)
+        return controller_message
+
     def Session(self, request_iterator, context):
-        for request in request_iterator:
-            request: cluster_pb2.Message
-            log.info(f"Received session request: {request}")
-            if request.type == cluster_pb2.MessageType.ADD_WORKER:
-                add_worker_request = request.add_worker
-                worker_metadata = Master.WorkerMetadata(
-                    add_worker_request.host,
-                    add_worker_request.port,
-                    add_worker_request.worker_id,
-                    add_worker_request.worker_rank
-                )
-                self._workers[add_worker_request.worker_id] = worker_metadata
-                log.info(f"Worker {add_worker_request.worker_id} added.")
-                yield cluster_pb2.Message(
-                    type=cluster_pb2.MessageType.ACK,
-                    ack=cluster_pb2.Ack(
-                        message=f"Worker {add_worker_request.worker_id} added successfully."
+        """
+        Bidirectional session: accept incoming cluster.Messages and forward to controllers (local or worker).
+        Whenever any controller (local or remote) produces a response, convert it to cluster Message
+        (using Ack.message to carry object refs or errors) and yield it back to the client immediately.
+        """
+        import time
+
+        outgoing_q = Queue()
+        stop_event = threading.Event()
+
+        # track which worker listeners have been started for this session
+        subscribed_workers = set()
+        listener_threads = []
+
+        def request_reader():
+            try:
+                for request in request_iterator:
+                    request: cluster_pb2.Message
+                    log.info(f"Received session request: {request}")
+                    if request.type == cluster_pb2.MessageType.APPLY_TO_WORKER:
+                        req = request.apply_to_worker
+                        worker_id = req.worker_id
+                        controller_message = req.controller_message
+                        if worker_id is None or worker_id not in self._controllers:
+                            # handle locally and publish response
+                            try:
+                                resp = self._controller.apply(controller_message)
+                                outgoing_q.put(("local", resp))
+                            except Exception as e:
+                                log.exception("Error applying to local controller")
+                                outgoing_q.put(("local", controller_pb2.Message(type=controller_pb2.MessageType.ACK, ack=controller_pb2.Ack(error=str(e)))))
+                        else:
+                            # forward to worker controller asynchronously
+                            meta = self._controllers[worker_id]
+                            meta._controller.send_message(controller_message)
+                    elif request.type == cluster_pb2.MessageType.BROADCAST:
+                        # try to call local broadcast if exists, otherwise send to all controllers
+                        try:
+                            self._controller.broadcast(request.broadcast.controller_message)
+                        except Exception:
+                            for meta in list(self._controllers.values()):
+                                try:
+                                    meta._controller.send_message(request.broadcast.controller_message)
+                                except Exception:
+                                    log.exception("Failed to send broadcast to worker")
+                    else:
+                        log.error(f"Unknown message type received: {request.type}")
+            except Exception:
+                log.exception("Error reading session requests")
+            finally:
+                stop_event.set()
+                # put sentinel to unblock main sender
+                try:
+                    outgoing_q.put(None)
+                except Exception:
+                    pass
+
+        def worker_listener(meta: Master.ControllerMetadata):
+            q = None
+            try:
+                q = meta._controller.get_outgoing_queue()
+            except Exception:
+                log.exception("ControllerContext has no outgoing queue")
+                return
+            while not stop_event.is_set():
+                try:
+                    msg = q.get()
+                except Exception:
+                    continue
+                # publish tuple (worker_id, controller_message)
+                outgoing_q.put((meta._worker_id, msg))
+
+        def monitor_new_controllers():
+            while not stop_event.is_set():
+                for wid, meta in list(self._controllers.items()):
+                    if wid not in subscribed_workers:
+                        t = threading.Thread(target=worker_listener, args=(meta,), daemon=True)
+                        t.start()
+                        listener_threads.append(t)
+                        subscribed_workers.add(wid)
+                time.sleep(0.5)
+
+        # start background threads
+        req_thread = threading.Thread(target=request_reader, daemon=True)
+        req_thread.start()
+        monitor_thread = threading.Thread(target=monitor_new_controllers, daemon=True)
+        monitor_thread.start()
+
+        # main loop: forward controller responses to client as cluster messages
+        try:
+            while not stop_event.is_set():
+                item = outgoing_q.get()
+                if item is None:
+                    break
+                source, ctrl_msg = item
+                # ctrl_msg is a controller_pb2.Message
+                ctrl_msg: controller_pb2.Message
+                try:
+                    yield cluster_pb2.Message(
+                        type=cluster_pb2.MessageType.RT_RESULT,
+                        return_result=cluster_pb2.ReturnResult(
+                            controller_message=ctrl_msg
+                        )
                     )
-                )
-            elif request.type == cluster_pb2.MessageType.REMOVE_WORKER:
-                remove_worker_request = request.remove_worker
-                if remove_worker_request.worker_id in self._workers:
-                    del self._workers[remove_worker_request.worker_id]
-                    log.info(f"Worker {remove_worker_request.worker_id} removed.")
-            else:
-                log.error(f"Unknown message type received: {request.type}")
+                except Exception:
+                    log.exception("Error converting controller message to cluster message")
+        finally:
+            stop_event.set()
+            # attempt to join threads briefly
+            try:
+                req_thread.join(timeout=1)
+            except Exception:
+                pass
+            try:
+                monitor_thread.join(timeout=1)
+            except Exception:
+                pass
 
     def AddWorkerCommand(self, request, context):
         return self.addWorker(request)
@@ -273,21 +397,20 @@ class Master(cluster_pb2_grpc.ClusterServiceServicer):
 
     
     def addWorker(self, add_worker_request: cluster_pb2.AddWorker):
-        worker_metadata = Master.WorkerMetadata(
+        worker_metadata = Master.ControllerMetadata(
             add_worker_request.host,
             add_worker_request.port,
             add_worker_request.worker_id,
             add_worker_request.worker_rank
         )
-        self._workers[add_worker_request.worker_id] = worker_metadata
+        self._controllers[add_worker_request.worker_id] = worker_metadata
         log.info(f"Worker {add_worker_request.worker_id} added.")
-        context = ContollerContext(f"{add_worker_request.host}:{add_worker_request.port}")
         return cluster_pb2.Ack(
             message=f"Worker {add_worker_request.worker_id} added successfully."
         )
     def removeWorker(self, remove_worker_request: cluster_pb2.RemoveWorker):
-        if remove_worker_request.worker_id in self._workers:
-            del self._workers[remove_worker_request.worker_id]
+        if remove_worker_request.worker_id in self._controllers:
+            del self._controllers[remove_worker_request.worker_id]
             log.info(f"Worker {remove_worker_request.worker_id} removed.")
             return cluster_pb2.Ack(
                 message=f"Worker {remove_worker_request.worker_id} removed successfully."

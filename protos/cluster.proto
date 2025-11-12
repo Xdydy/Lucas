@@ -7,6 +7,8 @@ enum MessageType {
     UNSPECIFIED = 0; // unknown command type
     ACK = 1; // acknowledged
     APPLY_TO_WORKER = 2; // apply message to worker
+    BROADCAST = 3; // broadcast message to all workers
+    RT_RESULT = 4; // runtime result message
 }
 
 message Ack {
@@ -38,11 +40,23 @@ message ApplyToWorker {
     controller.Message controller_message = 2; // message to apply to the worker
 }
 
+message Broadcast {
+    controller.Message controller_message = 1;
+}
+
+message ReturnResult {
+    oneof value {
+        controller.Message controller_message = 1;
+    }
+}
+
 message Message {
     MessageType type = 1;
     oneof Message {
         Ack ack = 2;
         ApplyToWorker apply_to_worker = 3;
+        Broadcast broadcast = 4;
+        ReturnResult return_result = 5;
     }
 }
 

@@ -25,15 +25,15 @@ _sym_db = _symbol_database.Default()
 import controller_pb2 as controller__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rcluster.proto\x12\x07\x63luster\x1a\x10\x63ontroller.proto\"%\n\x03\x41\x63k\x12\x0f\n\x07message\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"O\n\tAddWorker\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\x0c\n\x04host\x18\x02 \x01(\t\x12\x0c\n\x04port\x18\x03 \x01(\x05\x12\x13\n\x0bworker_rank\x18\x04 \x01(\x05\"!\n\x0cRemoveWorker\x12\x11\n\tworker_id\x18\x01 \x01(\t\"\x13\n\x11GetWorkersRequest\"9\n\x12GetWorkersResponse\x12#\n\x07workers\x18\x01 \x03(\x0b\x32\x12.cluster.AddWorker\"S\n\rApplyToWorker\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12/\n\x12\x63ontroller_message\x18\x02 \x01(\x0b\x32\x13.controller.Message\"\x88\x01\n\x07Message\x12\"\n\x04type\x18\x01 \x01(\x0e\x32\x14.cluster.MessageType\x12\x1b\n\x03\x61\x63k\x18\x02 \x01(\x0b\x32\x0c.cluster.AckH\x00\x12\x31\n\x0f\x61pply_to_worker\x18\x03 \x01(\x0b\x32\x16.cluster.ApplyToWorkerH\x00\x42\t\n\x07Message*<\n\x0bMessageType\x12\x0f\n\x0bUNSPECIFIED\x10\x00\x12\x07\n\x03\x41\x43K\x10\x01\x12\x13\n\x0f\x41PPLY_TO_WORKER\x10\x02\x32\x84\x02\n\x0e\x43lusterService\x12\x33\n\x07Session\x12\x10.cluster.Message\x1a\x10.cluster.Message\"\x00(\x01\x30\x01\x12\x36\n\x10\x41\x64\x64WorkerCommand\x12\x12.cluster.AddWorker\x1a\x0c.cluster.Ack\"\x00\x12<\n\x13RemoveWorkerCommand\x12\x15.cluster.RemoveWorker\x1a\x0c.cluster.Ack\"\x00\x12G\n\nGetWorkers\x12\x1a.cluster.GetWorkersRequest\x1a\x1b.cluster.GetWorkersResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rcluster.proto\x12\x07\x63luster\x1a\x10\x63ontroller.proto\"%\n\x03\x41\x63k\x12\x0f\n\x07message\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"O\n\tAddWorker\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12\x0c\n\x04host\x18\x02 \x01(\t\x12\x0c\n\x04port\x18\x03 \x01(\x05\x12\x13\n\x0bworker_rank\x18\x04 \x01(\x05\"!\n\x0cRemoveWorker\x12\x11\n\tworker_id\x18\x01 \x01(\t\"\x13\n\x11GetWorkersRequest\"9\n\x12GetWorkersResponse\x12#\n\x07workers\x18\x01 \x03(\x0b\x32\x12.cluster.AddWorker\"S\n\rApplyToWorker\x12\x11\n\tworker_id\x18\x01 \x01(\t\x12/\n\x12\x63ontroller_message\x18\x02 \x01(\x0b\x32\x13.controller.Message\"<\n\tBroadcast\x12/\n\x12\x63ontroller_message\x18\x01 \x01(\x0b\x32\x13.controller.Message\"J\n\x0cReturnResult\x12\x31\n\x12\x63ontroller_message\x18\x01 \x01(\x0b\x32\x13.controller.MessageH\x00\x42\x07\n\x05value\"\xe1\x01\n\x07Message\x12\"\n\x04type\x18\x01 \x01(\x0e\x32\x14.cluster.MessageType\x12\x1b\n\x03\x61\x63k\x18\x02 \x01(\x0b\x32\x0c.cluster.AckH\x00\x12\x31\n\x0f\x61pply_to_worker\x18\x03 \x01(\x0b\x32\x16.cluster.ApplyToWorkerH\x00\x12\'\n\tbroadcast\x18\x04 \x01(\x0b\x32\x12.cluster.BroadcastH\x00\x12.\n\rreturn_result\x18\x05 \x01(\x0b\x32\x15.cluster.ReturnResultH\x00\x42\t\n\x07Message*Z\n\x0bMessageType\x12\x0f\n\x0bUNSPECIFIED\x10\x00\x12\x07\n\x03\x41\x43K\x10\x01\x12\x13\n\x0f\x41PPLY_TO_WORKER\x10\x02\x12\r\n\tBROADCAST\x10\x03\x12\r\n\tRT_RESULT\x10\x04\x32\x84\x02\n\x0e\x43lusterService\x12\x33\n\x07Session\x12\x10.cluster.Message\x1a\x10.cluster.Message\"\x00(\x01\x30\x01\x12\x36\n\x10\x41\x64\x64WorkerCommand\x12\x12.cluster.AddWorker\x1a\x0c.cluster.Ack\"\x00\x12<\n\x13RemoveWorkerCommand\x12\x15.cluster.RemoveWorker\x1a\x0c.cluster.Ack\"\x00\x12G\n\nGetWorkers\x12\x1a.cluster.GetWorkersRequest\x1a\x1b.cluster.GetWorkersResponse\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'cluster_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_MESSAGETYPE']._serialized_start=503
-  _globals['_MESSAGETYPE']._serialized_end=563
+  _globals['_MESSAGETYPE']._serialized_start=730
+  _globals['_MESSAGETYPE']._serialized_end=820
   _globals['_ACK']._serialized_start=44
   _globals['_ACK']._serialized_end=81
   _globals['_ADDWORKER']._serialized_start=83
@@ -46,8 +46,12 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_GETWORKERSRESPONSE']._serialized_end=277
   _globals['_APPLYTOWORKER']._serialized_start=279
   _globals['_APPLYTOWORKER']._serialized_end=362
-  _globals['_MESSAGE']._serialized_start=365
-  _globals['_MESSAGE']._serialized_end=501
-  _globals['_CLUSTERSERVICE']._serialized_start=566
-  _globals['_CLUSTERSERVICE']._serialized_end=826
+  _globals['_BROADCAST']._serialized_start=364
+  _globals['_BROADCAST']._serialized_end=424
+  _globals['_RETURNRESULT']._serialized_start=426
+  _globals['_RETURNRESULT']._serialized_end=500
+  _globals['_MESSAGE']._serialized_start=503
+  _globals['_MESSAGE']._serialized_end=728
+  _globals['_CLUSTERSERVICE']._serialized_start=823
+  _globals['_CLUSTERSERVICE']._serialized_end=1083
 # @@protoc_insertion_point(module_scope)
