@@ -1,16 +1,16 @@
 import os
 from typing import Any, Callable
-from .utils.memory import parse_memory_string
-from .utils.mapper import to_proto_dag
+from utils.memory import parse_memory_string
+from utils.mapper import to_proto_dag
 from lucas import Runtime, Function, ActorClass, ActorInstance
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
 from lucas.workflow.dag import DAGNode, DataNode, ControlNode, ActorNode
 from lucas.utils.logging import log
 
-from .protos.common import types_pb2 as common
-from .protos.controller import controller_pb2, controller_pb2_grpc
-from .utils import EncDec
+from protos.common import types_pb2 as common
+from protos.controller import controller_pb2, controller_pb2_grpc
+from utils import EncDec
 
 from concurrent.futures import Future, wait
 import cloudpickle

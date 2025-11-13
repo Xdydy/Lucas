@@ -1,0 +1,1 @@
+# Common protobuf types for Lucas

@@ -9,7 +9,7 @@ from typing import Any, TypedDict, Iterable
 
 import cloudpickle
 import sys
-from ..protos.common import types_pb2 as common
+from protos.common import types_pb2 as common
 
 LANG_PYTHON = common.LANG_PYTHON
 LANG_GO = common.LANG_GO

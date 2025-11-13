@@ -1,5 +1,5 @@
 from lucas.workflow.dag import DAG
-from ..protos.controller import controller_pb2
+from protos.controller import controller_pb2
 
 def to_proto_dag(dag: DAG):
     """Convert lucas DAG object to proto DAG message"""
