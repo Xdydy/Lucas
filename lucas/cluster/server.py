@@ -347,9 +347,13 @@ class Master(cluster_pb2_grpc.ClusterServiceServicer, Controller, platform_pb2_g
                             meta._controller.send_message(controller_message)
                     elif request.type == platform_pb2.MessageType.BROADCAST:
                         # try to call local broadcast if exists, otherwise send to all controllers
+                        controller_message = request.broadcast.controller_message
                         try:
-                            self._broadcast(request.broadcast.controller_message)
-                        except Exception:
+                            submit_local(controller_message)
+                            for meta in self._controllers.values():
+                                meta._controller.send_message(controller_message)
+                        except Exception as e:
+                            log.error(f"Error broadcasting to local and workers: {e}")
                             for meta in list(self._controllers.values()):
                                 try:
                                     meta._controller.send_message(request.broadcast.controller_message)
@@ -481,9 +485,28 @@ class Master(cluster_pb2_grpc.ClusterServiceServicer, Controller, platform_pb2_g
             return cluster_pb2.Ack(
                 error=f"Worker {remove_worker_request.worker_id} not found."
             )
+    def getWorkers(self):
+        workers = []
+        for controller in self._controllers.values():
+            worker_id = controller._worker_id
+            host = controller._host
+            port = controller._port
+            rank = controller._rank
+            workers.append(cluster_pb2.AddWorker(
+                host=host,
+                port=port,
+                worker_id=worker_id,
+                worker_rank=rank
+            ))
+        return cluster_pb2.GetWorkersResponse(
+            workers=workers
+        )
 
     def RemoveWorkerCommand(self, request, context):
         return self.removeWorker(request)
+    
+    def GetWorkers(self, request, context):
+        return self.getWorkers()
 
 class Worker(Controller):
     def __init__(self, master_address: str, worker_host: str, worker_port: int, rank=1, store_service: StorageService = None):
