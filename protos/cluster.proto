@@ -1,16 +1,6 @@
 syntax = "proto3";
 package cluster;
 
-import "controller.proto";
-
-enum MessageType {
-    UNSPECIFIED = 0; // unknown command type
-    ACK = 1; // acknowledged
-    APPLY_TO_WORKER = 2; // apply message to worker
-    BROADCAST = 3; // broadcast message to all workers
-    RT_RESULT = 4; // runtime result message
-}
-
 message Ack {
     string message = 1; // acknowledgment message
     string error = 2; // error message, if any
@@ -35,33 +25,9 @@ message GetWorkersResponse {
     repeated AddWorker workers = 1; // list of workers
 }
 
-message ApplyToWorker {
-    string worker_id = 1; // unique worker ID
-    controller.Message controller_message = 2; // message to apply to the worker
-}
 
-message Broadcast {
-    controller.Message controller_message = 1;
-}
-
-message ReturnResult {
-    oneof value {
-        controller.Message controller_message = 1;
-    }
-}
-
-message Message {
-    MessageType type = 1;
-    oneof Message {
-        Ack ack = 2;
-        ApplyToWorker apply_to_worker = 3;
-        Broadcast broadcast = 4;
-        ReturnResult return_result = 5;
-    }
-}
 
 service ClusterService {
-    rpc Session(stream Message) returns (stream Message) {}
     rpc AddWorkerCommand(AddWorker) returns (Ack) {}
     rpc RemoveWorkerCommand(RemoveWorker) returns (Ack) {}
     rpc GetWorkers(GetWorkersRequest) returns (GetWorkersResponse) {}

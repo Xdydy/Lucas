@@ -5,7 +5,7 @@ from lucas.workflow.executor import Executor
 from lucas.workflow.dag import DAGNode, DataNode, ControlNode, ActorNode
 from lucas.utils.logging import log
 
-from .protos import controller_pb2, controller_pb2_grpc, store_pb2, store_pb2_grpc
+from .protos import platform_pb2, platform_pb2_grpc, store_pb2, store_pb2_grpc, controller_pb2
 from .scheduler import Scheduler
 
 from concurrent.futures import Future, wait, FIRST_COMPLETED
@@ -28,13 +28,14 @@ class Context:
     def __init__(self, master_addr: str):
         self._master_addr = master_addr
         self._channel = grpc.insecure_channel(self._master_addr)
-        self._stub = controller_pb2_grpc.ControllerServiceStub(self._channel)
+        self._stub = platform_pb2_grpc.PlatformStub(self._channel)
         self._msg_queue = Queue()
         self._result: dict[str, Future] = {}
         self._result_lock = threading.Lock()
-        self._resp_stream = self._stub.Session(self._message_generator())
+        self._resp_stream = self._stub.PlatformSession(self._message_generator())
         self._resp_thread = threading.Thread(target=self._handle_responses, daemon=True)
         self._resp_thread.start()
+        self._scheduler: Scheduler | None = None
     
     def set_scheduler(self, scheduler: Scheduler):
         if self._scheduler is not None:
@@ -44,21 +45,19 @@ class Context:
     def _message_generator(self):
         while True:
             msg = self._msg_queue.get()
-            if msg is None:
-                break
             yield msg
     
     def _handle_responses(self):
         for resp in self._resp_stream:
-            resp: controller_pb2.Message
-            if resp.type == controller_pb2.MessageType.RT_RESULT:
+            resp: platform_pb2.Message
+            if resp.type == platform_pb2.MessageType.RT_RESULT:
                 self._handle_rt_result(resp.return_result)
-            elif resp.type == controller_pb2.MessageType.ACK:
+            elif resp.type == platform_pb2.MessageType.ACK:
                 self._handle_ack(resp.ack)
             else:
                 log.warning(f"Unknown response type: {resp.type}")
-
-    def _handle_rt_result(self, rt_result: controller_pb2.ReturnResult):
+    
+    def _handle_controller_rt_result(self, rt_result: controller_pb2.ReturnResult):
         log.debug(f"Received runtime result: {rt_result.value}")
         if rt_result.value.type == controller_pb2.Data.ObjectType.OBJ_REF:
             obj_id = rt_result.value.ref
@@ -69,8 +68,19 @@ class Context:
                     f = Future()
                     f.set_result(rt_result.value)
                     self._result[obj_id] = f
+
+
+    def _handle_controller_response(self, controller_message: controller_pb2.Message):
+        log.debug(f"Received controller response: {controller_message}")
+        if controller_message.type == controller_pb2.MessageType.RT_RESULT:
+            self._handle_controller_rt_result(controller_message.return_result)
+        elif controller_message.type == controller_pb2.MessageType.ACK:
+            self._handle_ack(controller_message.ack)
         else:
-            log.warning(f"Received non-object result: {rt_result.value}")
+            log.warning(f"Unknown controller response type: {controller_message.type}")
+
+    def _handle_rt_result(self, rt_result: platform_pb2.ReturnResult):
+        self._handle_controller_response(rt_result.controller_message)
 
     def _handle_ack(self, ack: controller_pb2.Ack):
         # log.info(f"Received ACK: {ack.message}")
@@ -85,8 +95,21 @@ class Context:
                 f = Future()
                 self._result[obj_id] = f
         return self._result[obj_id]
+    
+    def schedule(self, msg: controller_pb2.Message) -> platform_pb2.Message:
+        if self._scheduler is None:
+            return platform_pb2.Message(
+                type=platform_pb2.MessageType.APPLY_TO_WORKER,
+                apply_to_worker=platform_pb2.ApplyToWorker(
+                    controller_message=msg
+                )
+            )
+        else:
+            return self._scheduler.schedule(msg)
+
     def send(self, msg: controller_pb2.Message):
-        self._msg_queue.put(msg)
+        platform_msg = self.schedule(msg)
+        self._msg_queue.put(platform_msg)
 
     def get_obj(self, refid: str):
         channel = grpc.insecure_channel(self._master_addr)
