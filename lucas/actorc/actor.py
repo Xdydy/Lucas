@@ -8,9 +8,8 @@ from lucas.workflow.executor import Executor
 from lucas.workflow.dag import DAGNode, DataNode, ControlNode, ActorNode
 from lucas.utils.logging import log
 
-from .protos import platform_pb2
+from .protos.common import types_pb2 as common
 from .protos.controller import controller_pb2, controller_pb2_grpc
-from .protos.cluster import cluster_pb2, cluster_pb2_grpc
 from .utils import EncDec
 
 from concurrent.futures import Future, wait
@@ -61,26 +60,6 @@ class ActorContext:
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
         # self._cluster_thread = threading.Thread(target=self._run_cluster, daemon=True)
-        
-        # register application
-        self.send(
-            controller_pb2.Message(
-                Type=controller_pb2.CommandType.FR_REGISTER_REQUEST,
-                RegisterRequest=controller_pb2.RegisterRequest(
-                    ApplicationID=app_id,
-                ),
-            )
-        )
-
-        # wait for ready
-        for response in self._response_stream:
-            response: controller_pb2.Message
-            if response.Type == controller_pb2.CommandType.ACK:
-                ack: controller_pb2.Ack = response.Ack
-                if ack.Error != "":
-                    log.error(f"Register application failed: {ack.Error}")
-                    raise ValueError(f"Register application failed: {ack.Error}")
-                break
 
         self._thread.start()
         # self._cluster_thread.start()
@@ -114,7 +93,7 @@ class ActorContext:
                             future = Future()
                             future.set_result(value)
                             self._result_map[key] = future
-                elif response.Type == controller_pb2.CommandType.FR_RESPONSE_OBJECT:
+                elif response.Type == controller_pb2.CommandType.BK_RESPONSE_OBJECT:
                     response_object: controller_pb2.ResponseObject = response.ResponseObject
                     obj_id = response_object.ID
                     value = EncDec.decode(response_object.Value)
@@ -162,6 +141,7 @@ class ActorContext:
         return self._obj_map.get(obj_id)
 
     def send(self, message: controller_pb2.Message):
+        message.AppID = self._app_id
         self._q.put(message)
     
     # def send_cluster(self, message: cluster_pb2.Message):
@@ -242,7 +222,7 @@ class ActorFunction(Function):
                 Venv=venv,
                 Requirements=dependcy,
                 PickledObject=cloudpickle.dumps(fn),
-                Language=platform_pb2.LANG_PYTHON,
+                Language=common.LANG_PYTHON,
                 Resources=controller_pb2.Resources(
                     CPU=cpu,
                     Memory=parse_memory_string(memory),
@@ -262,7 +242,7 @@ class ActorFunction(Function):
                     rpc_data = controller_pb2.Data(
                         Type=controller_pb2.Data.ObjectType.OBJ_ENCODED,
                         Encoded=EncDec.encode(
-                            value, language=platform_pb2.LANG_PYTHON
+                            value, language=common.LANG_PYTHON
                         ),
                     )
                 actorContext.send(controller_pb2.Message(
@@ -317,7 +297,7 @@ class ActorRuntimeInstance(ActorInstance):
                 rpc_data = controller_pb2.Data(
                     Type=controller_pb2.Data.ObjectType.OBJ_ENCODED,
                     Encoded=EncDec.encode(
-                        value, language=platform_pb2.LANG_PYTHON
+                        value, language=common.LANG_PYTHON
                     ),
                 )
             appendClassMethodArg = controller_pb2.AppendClassMethodArg(
@@ -401,7 +381,7 @@ class ActorRuntimeClass(ActorClass):
                 Venv=venv,
                 Requirements=dependcy,
                 PickledObject=obj,
-                Language=platform_pb2.LANG_PYTHON,
+                Language=common.LANG_PYTHON,
                 Resources=controller_pb2.Resources(
                     CPU=cpu,
                     Memory=memory,
@@ -429,7 +409,7 @@ class ActorExecutor(Executor):
             Type = controller_pb2.CommandType.FR_REQUEST_OBJECT,
             RequestObject = controller_pb2.RequestObject(
                 ID = data.Ref.ID,
-                Target = None,
+                Source = data.Ref.Source,  # Source is now a string, not an object
             ),
         )
         actorContext.send(message)
@@ -484,7 +464,7 @@ class ActorExecutor(Executor):
                                 rpc_data = controller_pb2.Data(
                                     Type=controller_pb2.Data.ObjectType.OBJ_ENCODED,
                                     Encoded=EncDec.encode(
-                                        data, language=platform_pb2.LANG_PYTHON
+                                        data, language=common.LANG_PYTHON
                                     ),
                                 )
                             if isinstance(control_node, ActorNode):

@@ -3,9 +3,9 @@
 import grpc
 import warnings
 
-from controller import controller_pb2 as controller_dot_controller__pb2
+import controller_pb2 as controller__pb2
 
-GRPC_GENERATED_VERSION = '1.71.0'
+GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in controller/controller_pb2_grpc.py depends on'
+        + ' but the generated code in controller_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -36,8 +36,8 @@ class ServiceStub(object):
         """
         self.Session = channel.stream_stream(
                 '/controller.Service/Session',
-                request_serializer=controller_dot_controller__pb2.Message.SerializeToString,
-                response_deserializer=controller_dot_controller__pb2.Message.FromString,
+                request_serializer=controller__pb2.Message.SerializeToString,
+                response_deserializer=controller__pb2.Message.FromString,
                 _registered_method=True)
 
 
@@ -55,8 +55,8 @@ def add_ServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Session': grpc.stream_stream_rpc_method_handler(
                     servicer.Session,
-                    request_deserializer=controller_dot_controller__pb2.Message.FromString,
-                    response_serializer=controller_dot_controller__pb2.Message.SerializeToString,
+                    request_deserializer=controller__pb2.Message.FromString,
+                    response_serializer=controller__pb2.Message.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -84,8 +84,8 @@ class Service(object):
             request_iterator,
             target,
             '/controller.Service/Session',
-            controller_dot_controller__pb2.Message.SerializeToString,
-            controller_dot_controller__pb2.Message.FromString,
+            controller__pb2.Message.SerializeToString,
+            controller__pb2.Message.FromString,
             options,
             channel_credentials,
             insecure,
