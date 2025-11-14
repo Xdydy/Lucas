@@ -1,4 +1,6 @@
 syntax = "proto3";
+
+import "google/protobuf/empty.proto";
 package store;
 
 message GetObjectRequest {
@@ -20,7 +22,15 @@ message PutObjectResponse {
     string error = 2; // error message, if any
 }
 
+message Publish {
+    string ref = 2;
+}
+
+
 service StoreService {
     rpc GetObject(GetObjectRequest) returns (GetObjectResponse) {}
     rpc PutObject(PutObjectRequest) returns (PutObjectResponse) {}
+    // Publish is a server-streaming RPC: client sends an empty request and the server
+    // continuously streams `Publish` messages (worker_id + ref) to the client.
+    rpc PublishSession(google.protobuf.Empty) returns (stream Publish) {}
 }

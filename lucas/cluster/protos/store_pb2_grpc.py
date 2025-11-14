@@ -3,9 +3,10 @@
 import grpc
 import warnings
 
+from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 import store_pb2 as store__pb2
 
-GRPC_GENERATED_VERSION = '1.76.0'
+GRPC_GENERATED_VERSION = '1.75.0'
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 
@@ -18,7 +19,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in store_pb2_grpc.py depends on'
+        + f' but the generated code in store_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -44,6 +45,11 @@ class StoreServiceStub(object):
                 request_serializer=store__pb2.PutObjectRequest.SerializeToString,
                 response_deserializer=store__pb2.PutObjectResponse.FromString,
                 _registered_method=True)
+        self.PublishSession = channel.unary_stream(
+                '/store.StoreService/PublishSession',
+                request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+                response_deserializer=store__pb2.Publish.FromString,
+                _registered_method=True)
 
 
 class StoreServiceServicer(object):
@@ -61,6 +67,14 @@ class StoreServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PublishSession(self, request, context):
+        """Publish is a server-streaming RPC: client sends an empty request and the server
+        continuously streams `Publish` messages (worker_id + ref) to the client.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_StoreServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -73,6 +87,11 @@ def add_StoreServiceServicer_to_server(servicer, server):
                     servicer.PutObject,
                     request_deserializer=store__pb2.PutObjectRequest.FromString,
                     response_serializer=store__pb2.PutObjectResponse.SerializeToString,
+            ),
+            'PublishSession': grpc.unary_stream_rpc_method_handler(
+                    servicer.PublishSession,
+                    request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                    response_serializer=store__pb2.Publish.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -129,6 +148,33 @@ class StoreService(object):
             '/store.StoreService/PutObject',
             store__pb2.PutObjectRequest.SerializeToString,
             store__pb2.PutObjectResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PublishSession(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/store.StoreService/PublishSession',
+            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            store__pb2.Publish.FromString,
             options,
             channel_credentials,
             insecure,

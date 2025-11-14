@@ -22,23 +22,26 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
+from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bstore.proto\x12\x05store\"\x1f\n\x10GetObjectRequest\x12\x0b\n\x03ref\x18\x01 \x01(\t\"0\n\x11GetObjectResponse\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"-\n\x10PutObjectRequest\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\x0b\n\x03key\x18\x02 \x01(\t\"/\n\x11PutObjectResponse\x12\x0b\n\x03ref\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t2\x92\x01\n\x0cStoreService\x12@\n\tGetObject\x12\x17.store.GetObjectRequest\x1a\x18.store.GetObjectResponse\"\x00\x12@\n\tPutObject\x12\x17.store.PutObjectRequest\x1a\x18.store.PutObjectResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bstore.proto\x12\x05store\x1a\x1bgoogle/protobuf/empty.proto\"\x1f\n\x10GetObjectRequest\x12\x0b\n\x03ref\x18\x01 \x01(\t\"0\n\x11GetObjectResponse\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"-\n\x10PutObjectRequest\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\x0b\n\x03key\x18\x02 \x01(\t\"/\n\x11PutObjectResponse\x12\x0b\n\x03ref\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"\x16\n\x07Publish\x12\x0b\n\x03ref\x18\x02 \x01(\t2\xd0\x01\n\x0cStoreService\x12@\n\tGetObject\x12\x17.store.GetObjectRequest\x1a\x18.store.GetObjectResponse\"\x00\x12@\n\tPutObject\x12\x17.store.PutObjectRequest\x1a\x18.store.PutObjectResponse\"\x00\x12<\n\x0ePublishSession\x12\x16.google.protobuf.Empty\x1a\x0e.store.Publish\"\x00\x30\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'store_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_GETOBJECTREQUEST']._serialized_start=22
-  _globals['_GETOBJECTREQUEST']._serialized_end=53
-  _globals['_GETOBJECTRESPONSE']._serialized_start=55
-  _globals['_GETOBJECTRESPONSE']._serialized_end=103
-  _globals['_PUTOBJECTREQUEST']._serialized_start=105
-  _globals['_PUTOBJECTREQUEST']._serialized_end=150
-  _globals['_PUTOBJECTRESPONSE']._serialized_start=152
-  _globals['_PUTOBJECTRESPONSE']._serialized_end=199
-  _globals['_STORESERVICE']._serialized_start=202
-  _globals['_STORESERVICE']._serialized_end=348
+  _globals['_GETOBJECTREQUEST']._serialized_start=51
+  _globals['_GETOBJECTREQUEST']._serialized_end=82
+  _globals['_GETOBJECTRESPONSE']._serialized_start=84
+  _globals['_GETOBJECTRESPONSE']._serialized_end=132
+  _globals['_PUTOBJECTREQUEST']._serialized_start=134
+  _globals['_PUTOBJECTREQUEST']._serialized_end=179
+  _globals['_PUTOBJECTRESPONSE']._serialized_start=181
+  _globals['_PUTOBJECTRESPONSE']._serialized_end=228
+  _globals['_PUBLISH']._serialized_start=230
+  _globals['_PUBLISH']._serialized_end=252
+  _globals['_STORESERVICE']._serialized_start=255
+  _globals['_STORESERVICE']._serialized_end=463
 # @@protoc_insertion_point(module_scope)

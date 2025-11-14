@@ -18,7 +18,6 @@ class ControllerContext:
         self._channel = grpc.insecure_channel(peer_address)
         self._stub = controller_pb2_grpc.ControllerServiceStub(self._channel)
         # store stub to fetch object bytes from remote controller's store service
-        self._store_stub = store_pb2_grpc.StoreServiceStub(self._channel)
         self._msg_queue = Queue()
         # queue where this ControllerContext will publish incoming controller responses
         self._outgoing_queue = Queue()
@@ -79,22 +78,79 @@ class ControllerContext:
                 self._results[obj_id] = future
                 return future
 
-class Controller(controller_pb2_grpc.ControllerServiceServicer):
-    def __init__(self, data_store: "StorageService"):
+class StoreContext:
+    def __init__(self, peer_address: str):
+        self._peer_address = peer_address
+        self._channel = grpc.insecure_channel(peer_address)
+        self._stub = store_pb2_grpc.StoreServiceStub(self._channel)
+        self._resp_stream = self._stub.PublishSession(empty_pb2.Empty())
+        self._outgoing_queue = Queue()
+        self._resp_thread = threading.Thread(target=self._receive_messages, daemon=True)
+        self._resp_thread.start()
+
+    def _receive_messages(self):
+        for publish in self._resp_stream:
+            self._outgoing_queue.put(publish)
+
+    def get_outgoing_queue(self):
+        return self._outgoing_queue
+
+class StorageService(store_pb2_grpc.StoreServiceServicer):
+    def __init__(self):
         super().__init__()
+        self._data_store = {}
+        self._publish_obj = Queue()
+
+    def GetObject(self, request, context):
+        request: store_pb2.GetObjectRequest
+        key = request.ref
+        data = self.get(key)
+        if data is None:
+            return store_pb2.GetObjectResponse(
+                error=f"Object with key {key} not found."
+            )
+        return store_pb2.GetObjectResponse(data=cloudpickle.dumps(data))
+    
+    def PutObject(self, request, context):
+        request: store_pb2.PutObjectRequest
+        data = request.data
+        key = request.key
+        self.put(key, data)
+        return store_pb2.PutObjectResponse(ref=key)
+    
+    def PublishSession(self, request, context):
+        while True:
+            publish_msg: store_pb2.Publish = self._publish_obj.get()
+            yield publish_msg
+    
+    def publish(self, publish_msg: store_pb2.Publish):
+        self._publish_obj.put(publish_msg)
+    
+    def put(self, key: str, data: Any):
+        self._data_store[key] = data
+        self.publish(store_pb2.Publish(ref=key))
+        log.info(f"Data stored with key: {key}")
+    def get(self, key: str) -> Any:
+        if key not in self._data_store:
+            return None
+        return self._data_store[key]    
+
+class Controller(controller_pb2_grpc.ControllerServiceServicer, StorageService):
+    def __init__(self):
+        controller_pb2_grpc.ControllerServiceServicer.__init__(self)
+        StorageService.__init__(self)
         self._funcs: dict[str, FunctionExecutor] = {}
         self._classes: dict[str, ClassExecutor] = {}
         self._pending_funcs = []
-        self._data_store = data_store
 
     def _transmit_data(self, data: controller_pb2.Data):
         data_type = data.type
         if data_type == controller_pb2.Data.ObjectType.OBJ_REF:
             obj_id = data.ref
-            if self._data_store.get(obj_id) is None:
+            if self.get(obj_id) is None:
                 log.error(f"Object reference {obj_id} not found.")
                 raise RuntimeError(f"Object reference {obj_id} not found.")
-            return self._data_store.get(obj_id)
+            return self.get(obj_id)
         elif data_type == controller_pb2.Data.ObjectType.OBJ_ENCODED:
             obj_data = data.encoded
             obj = cloudpickle.loads(obj_data)
@@ -102,7 +158,7 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
     
     def _transmit_result(self, result, session_id, instance_id, function_name) -> controller_pb2.Data:
         obj_id = f"{session_id}_{instance_id}_{function_name}"
-        self._data_store.put(obj_id, result)
+        self.put(obj_id, result)
         return controller_pb2.Data(
             type=controller_pb2.Data.ObjectType.OBJ_REF,
             ref=obj_id
@@ -211,37 +267,13 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         return controller_pb2.Ack(
             message="Pong")
 
-class StorageService(store_pb2_grpc.StoreServiceServicer):
-    def __init__(self):
-        super().__init__()
-        self._data_store = {}
 
-    def GetObject(self, request, context):
-        request: store_pb2.GetObjectRequest
-        key = request.ref
-        data = self.get(key)
-        if data is None:
-            return store_pb2.GetObjectResponse(
-                error=f"Object with key {key} not found."
-            )
-        return store_pb2.GetObjectResponse(data=cloudpickle.dumps(data))
-    
-    def PutObject(self, request, context):
-        request: store_pb2.PutObjectRequest
-        data = request.data
-        key = request.key
-        self.put(key, data)
-        return store_pb2.PutObjectResponse(ref=key)
-    
-    def put(self, key: str, data: Any):
-        self._data_store[key] = data
-        log.info(f"Data stored with key: {key}")
-    def get(self, key: str) -> Any:
-        if key not in self._data_store:
-            return None
-        return self._data_store[key]
 
-class Master(cluster_pb2_grpc.ClusterServiceServicer, Controller, platform_pb2_grpc.PlatformServicer):
+class Master(
+    cluster_pb2_grpc.ClusterServiceServicer, 
+    Controller, 
+    platform_pb2_grpc.PlatformServicer
+):
     class ControllerMetadata:
         def __init__(self, host: str, port: int, worker_id: str, rank: int):
             self._host = host
@@ -249,27 +281,41 @@ class Master(cluster_pb2_grpc.ClusterServiceServicer, Controller, platform_pb2_g
             self._worker_id = worker_id
             self._rank = rank
             self._controller = ControllerContext(f"{host}:{port}")
+            self._store = StoreContext(f"{host}:{port}")
             
-    def __init__(self, store_service: StorageService):
-        super().__init__(store_service)
+    def __init__(self):
+        Controller.__init__(self)
         self._controllers: dict[str, Master.ControllerMetadata] = {}
-
-    def _apply_to_worker(self, apply_to_worker_request: platform_pb2.ApplyToWorker):
-        worker_id = apply_to_worker_request.worker_id
-        controller_message = apply_to_worker_request.controller_message
-        if worker_id == None or worker_id not in self._controllers:
-            # Master Controller
-            # apply locally and convert controller response to cluster Message
-            resp = self._controller.apply(controller_message)
-            return resp
-        else:
-            context = self._controllers[worker_id]._controller
-            context.send_message(controller_message)
-
-    def _broadcast(self, broadcast_request: platform_pb2.Broadcast) -> platform_pb2.Message:
-        controller_message = broadcast_request.controller_message
-        self._controller.broadcast(controller_message)
-        return controller_message
+        self._refs = {}
+        self._ref_lock = threading.Lock()
+        self._controllers_event = threading.Event()
+        self._listen_store_service()
+    
+    def _listen_store_service(self):
+        listener_threads = []
+        subscribed_workers = set()
+        def store_listener(wid, meta: Master.ControllerMetadata):
+            q = meta._store.get_outgoing_queue()
+            while True:
+                publish_msg: store_pb2.Publish = q.get()
+                # Process the publish_msg as needed
+                with self._ref_lock:
+                    self._refs[publish_msg.ref] = wid
+                
+        def monitor_store():
+            while True:
+                self._controllers_event.wait()
+                self._controllers_event.clear()
+                for wid, meta in self._controllers.items():
+                    if wid not in subscribed_workers:
+                        subscribed_workers.add(wid)
+                        t = threading.Thread(target=store_listener, args=(wid, meta), daemon=True)
+                        t.start()
+                        listener_threads.append(t)
+        
+        monitor_thread = threading.Thread(target=monitor_store, daemon=True)
+        monitor_thread.start()
+        listener_threads.append(monitor_thread)
 
     def _spawn_local_session_reader(self, outgoing_q: Queue, stop_event: threading.Event, tag: str = "local") -> tuple[threading.Thread, Callable[[controller_pb2.Message], None]]:
         """Spawn a background thread that runs a single-message Controller.Session locally
@@ -469,6 +515,7 @@ class Master(cluster_pb2_grpc.ClusterServiceServicer, Controller, platform_pb2_g
             add_worker_request.worker_rank
         )
         self._controllers[add_worker_request.worker_id] = worker_metadata
+        self._controllers_event.set()
         log.info(f"Worker {add_worker_request.worker_id} added.")
         return cluster_pb2.Ack(
             message=f"Worker {add_worker_request.worker_id} added successfully."
@@ -507,10 +554,36 @@ class Master(cluster_pb2_grpc.ClusterServiceServicer, Controller, platform_pb2_g
     
     def GetWorkers(self, request, context):
         return self.getWorkers()
+    
 
-class Worker(Controller):
-    def __init__(self, master_address: str, worker_host: str, worker_port: int, rank=1, store_service: StorageService = None):
-        super().__init__(store_service)
+
+    def GetObject(self, request, context):
+        resp = StorageService.GetObject(self, request, context)
+        if resp.error == "":
+            return resp
+        return self.get_object(request)
+
+    def get_object(self, request: store_pb2.GetObjectRequest) -> store_pb2.GetObjectResponse:
+        ref = request.ref
+        with self._ref_lock:
+            if ref not in self._refs:
+                return store_pb2.GetObjectResponse(
+                    error=f"Reference {ref} not found."
+                )
+        worker_id = self._refs[ref]
+        meta = self._controllers[worker_id]
+        channel = grpc.insecure_channel(f"{meta._host}:{meta._port}")
+        stub = store_pb2_grpc.StoreServiceStub(channel)
+        resp: store_pb2.GetObjectResponse = stub.GetObject(request)
+        if resp.error != "":
+            log.error(f"Error getting object: {resp.error}")
+        return resp
+        
+class Worker(
+    Controller
+):
+    def __init__(self, master_address: str, worker_host: str, worker_port: int, rank=1):
+        super().__init__()
         self._worker_id = str(uuid.uuid4())
         self._master_address = master_address
         self._worker_host = worker_host
@@ -551,11 +624,10 @@ if __name__ == "__main__":
     worker_parser.add_argument("--rank", type=int, help="Rank of the worker", default=1)
 
     args = arg_parser.parse_args()
-    store_service = StorageService()
     if args.role == "master":
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-        master = Master(store_service)
-        store_pb2_grpc.add_StoreServiceServicer_to_server(store_service, server)
+        master = Master()
+        store_pb2_grpc.add_StoreServiceServicer_to_server(master, server)
         cluster_pb2_grpc.add_ClusterServiceServicer_to_server(master, server)
         controller_pb2_grpc.add_ControllerServiceServicer_to_server(master, server)
         platform_pb2_grpc.add_PlatformServicer_to_server(master, server)
@@ -571,10 +643,9 @@ if __name__ == "__main__":
             worker_host=args.worker_host,
             worker_port=args.worker_port,
             rank=args.rank,
-            store_service=store_service
         )
         controller_pb2_grpc.add_ControllerServiceServicer_to_server(worker, server)
-        store_pb2_grpc.add_StoreServiceServicer_to_server(store_service, server)
+        store_pb2_grpc.add_StoreServiceServicer_to_server(worker, server)
         server.add_insecure_port(f"[::]:{args.worker_port}")
         server.start()
         worker.connect_to_master()

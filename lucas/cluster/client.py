@@ -1,4 +1,4 @@
-from typing import Any, Callable
+from typing import Any, Callable, Tuple
 from lucas import Runtime, Function, ActorClass, ActorInstance
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
@@ -229,6 +229,7 @@ class ClusterExecutor(Executor):
         super().__init__(dag)
         self._pending_tasks : list[Future] = []
         self._map_future_callback: dict[Future, Callable[[Future], Any]] = {}
+        self._map_future_params: dict[Future, Tuple[Future]] = {}
     
     def _has_pending_tasks(self):
         return len(self._pending_tasks) > 0
@@ -237,11 +238,14 @@ class ClusterExecutor(Executor):
         self._pending_tasks.remove(fut)
         if fut in self._map_future_callback:
             callback = self._map_future_callback[fut]
-            callback(fut)
+            params = self._map_future_params[fut]
+            callback(*params)
             del self._map_future_callback[fut]
-    def _append_pending(self, fut: Future, callback: Callable[[Future], Any]):
+            del self._map_future_params[fut]
+    def _append_pending(self, fut: Future, c_node: ControlNode, d_node: DataNode, callback: Callable[[Future], Any]):
         self._pending_tasks.append(fut)
         self._map_future_callback[fut] = callback
+        self._map_future_params[fut] = (fut, c_node, d_node)
 
     def _return_result(self):
         result = None
@@ -253,7 +257,7 @@ class ClusterExecutor(Executor):
                     result = result.value
                 if isinstance(result, controller_pb2.Data):
                     result = transform_obj(result)
-            break
+                break
         return result
     
     def execute(self):
@@ -305,30 +309,30 @@ class ClusterExecutor(Executor):
                         data = transform_obj(data)
                         node.set_value(data)
 
-                log.info(f"{control_node.describe()} appargs {node._ld.value}")
-                if control_node.appargs(node._ld):
-                    if fn_type == "remote":
-                        control_node._datas['session_id'] = session_id
-                        control_node._datas['instance_id'] = control_node_metadata['id']
-                        control_node._datas['name'] = control_node_metadata['functionname']
-                    with task_lock:
-                        tasks.append(control_node)
+                    log.info(f"{control_node.describe()} appargs {node._ld.value}")
+                    if control_node.appargs(node._ld):
+                        if fn_type == "remote":
+                            control_node._datas['session_id'] = session_id
+                            control_node._datas['instance_id'] = control_node_metadata['id']
+                            control_node._datas['name'] = control_node_metadata['functionname']
+                        with task_lock:
+                            tasks.append(control_node)
             elif isinstance(node, ControlNode):
                 fn = node._fn
                 params = node._datas
                 r_node: DataNode = node.get_data_node()
                 result = fn(params)
                 if isinstance(result, Future):
-                    def set_datanode_ready(fut: Future):
-                        nonlocal node, task_lock, tasks
+                    def set_datanode_ready(fut: Future, c_node: ControlNode, d_node: DataNode):
+                        nonlocal task_lock, tasks
                         res = fut.result()
-                        r_node.set_value(res)
-                        r_node.set_ready()
-                        log.info(f"{node.describe()} calculate {r_node.describe()}")
-                        if r_node.is_ready():
+                        d_node.set_value(res)
+                        d_node.set_ready()
+                        log.info(f"{c_node.describe()} calculate {d_node.describe()}")
+                        if d_node.is_ready():
                             with task_lock:
-                                tasks.append(r_node)
-                    self._append_pending(result, set_datanode_ready)
+                                tasks.append(d_node)
+                    self._append_pending(result,node,r_node,set_datanode_ready)
                 else:
                     r_node.set_value(result)
                     r_node.set_ready()
