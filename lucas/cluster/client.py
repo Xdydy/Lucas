@@ -269,7 +269,7 @@ class ClusterExecutor(Executor):
                     with task_lock:
                         tasks.append(node)
             elif isinstance(node, ControlNode):
-                if node._ready:
+                if len(node.get_pre_data_nodes()) == 0:
                     with task_lock:
                         tasks.append(node)
         
@@ -336,9 +336,9 @@ class ClusterExecutor(Executor):
                     if r_node.is_ready():
                         with task_lock:
                             tasks.append(r_node)
-            result = self._return_result()
-            self.dag.reset()
-            return result
+        result = self._return_result()
+        self.dag.reset()
+        return result
         
 def transform_data(data: Any) -> controller_pb2.Data:
     if isinstance(data, controller_pb2.Data):
