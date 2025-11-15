@@ -9,7 +9,7 @@ from .executor import ExecutorSandBox, FunctionExecutor, ClassExecutor
 
 from argparse import ArgumentParser
 from queue import Queue
-from typing import Any, Callable
+from typing import Any, Callable, List
 from google.protobuf import empty_pb2
 
 class ControllerContext:
@@ -274,7 +274,7 @@ class Master(
     Controller, 
     platform_pb2_grpc.PlatformServicer
 ):
-    class ControllerMetadata:
+    class Metadata:
         def __init__(self, host: str, port: int, worker_id: str, rank: int):
             self._host = host
             self._port = port
@@ -282,41 +282,164 @@ class Master(
             self._rank = rank
             self._controller = ControllerContext(f"{host}:{port}")
             self._store = StoreContext(f"{host}:{port}")
+
+    class StoreProxy:
+        def __init__(self):
+            self._refs = {}
+            self._refs_lock = threading.Lock()
+            self._new_worker = Queue()
+        
+            self._listener_threads: List[threading.Thread] = []
+            self._subscriber_workers = set()
+
+            self._running = False
+        
+        def listen(self):
+            self._running = True
+            def store_listener(wid, meta: Master.Metadata):
+                q = meta._store.get_outgoing_queue()
+                while self._running:
+                    publish_msg: store_pb2.Publish = q.get()
+                    if publish_msg is None:
+                        continue
+                    # Process the publish_msg as needed
+                    with self._refs_lock:
+                        self._refs[publish_msg.ref] = wid
+                    
+            def monitor_store():
+                while self._running:
+                    wid, meta = self._new_worker.get()
+                    if wid not in self._subscriber_workers:
+                        self._subscriber_workers.add(wid)
+                        t = threading.Thread(target=store_listener, args=(wid, meta), daemon=True)
+                        t.start()
+                        self._listener_threads.append(t)
+            
+            monitor_thread = threading.Thread(target=monitor_store, daemon=True)
+            monitor_thread.start()
+            self._listener_threads.append(monitor_thread)
+
+        def exists(self, ref) -> bool:
+            with self._refs_lock:
+                return ref in self._refs
+        
+        def get_worker_id(self, ref) -> str | None:
+            with self._refs_lock:
+                return self._refs.get(ref, None)
+            
+        def add_worker(self, wid, meta: "Master.Metadata"):
+            self._new_worker.put((wid, meta))
+        
+        def shutdown(self):
+            self._running = False
+            for t in self._listener_threads:
+                t.join()
+
+    class ControllerProxy:
+        def __init__(self, out_controller: Controller):
+            self._metas : dict[str, Master.Metadata] = {}
+            self._new_worker = Queue()
+
+            self._listener_threads: List[threading.Thread] = []
+            self._subscriber_workers = set()
+
+            self._running = False
+
+            self._outgoing_q = Queue()
+            self._input = Queue()
+
+            self._out_controller = out_controller
+
+        
+        def _spawn_local_session_reader(self, tag: str = "local"):
+            def gen():
+                while self._running:
+                    msg = self._input.get()
+                    if msg is None or not self._running:
+                        break
+                    yield msg
+            
+            def local_runner():
+                try:
+                    for resp in self._out_controller.Session(gen(), None):
+                        try:
+                            self._outgoing_q.put((tag, resp))
+                        except Exception:
+                            log.exception("Failed to put local session response into outgoing_q")
+                except Exception:
+                    log.exception("local session reader error")
+            
+            t = threading.Thread(target=local_runner, daemon=True)
+            t.start()
+            self._listener_threads.append(t)
+        
+        def submit_local(self, controller_message: controller_pb2.Message):
+            self._input.put(controller_message)
+
+        def broadcast(self, controller_message: controller_pb2.Message):
+            for meta in self._metas.values():
+                meta._controller.send_message(controller_message)
+        
+        def listen(self):
+            self._running = True
+            def worker_listener(meta: Master.Metadata):
+                q = meta._controller.get_outgoing_queue()
+                while self._running:
+                    msg = q.get()
+                    if msg is None:
+                        break
+                    self._outgoing_q.put((meta._worker_id, msg))
+            def monitor_controller():
+                while self._running:
+                    wid, meta = self._new_worker.get()
+                    if wid not in self._subscriber_workers:
+                        self._subscriber_workers.add(wid)
+                        self._metas[wid] = meta
+                        t = threading.Thread(target=worker_listener, args=(meta,), daemon=True)
+                        t.start()
+                        self._listener_threads.append(t)
+            
+            self._spawn_local_session_reader()
+            monitor_thread = threading.Thread(target=monitor_controller, daemon=True)
+            monitor_thread.start()
+            self._listener_threads.append(monitor_thread)
+
+        def is_running(self) -> bool:
+            return self._running
+
+        def get_outgoing_queue(self):
+            return self._outgoing_q
+        
+        def exist_worker(self, worker_id) -> bool:
+            return worker_id in self._metas
+
+        def get_worker(self, worker_id):
+            return self._metas[worker_id]
+        
+        def get_workers(self):
+            return self._metas.values()
+        
+        def remove_worker(self, wid):
+            del self._metas[wid]
+    
+        def add_worker(self, wid, meta: "Master.Metadata"):
+            self._new_worker.put((wid, meta))
+
+        def shutdown(self):
+            self._running = False
+            for t in self._listener_threads:
+                t.join()
+    
+    
             
     def __init__(self):
         Controller.__init__(self)
-        self._controllers: dict[str, Master.ControllerMetadata] = {}
-        self._refs = {}
-        self._ref_lock = threading.Lock()
-        self._controllers_event = threading.Event()
-        self._listen_store_service()
+        # self._controllers: dict[str, Master.Metadata] = {}
+        self._store_proxy = Master.StoreProxy()
+        self._store_proxy.listen()
+        self._controller_proxy = Master.ControllerProxy(self)
+        self._controller_proxy.listen()
     
-    def _listen_store_service(self):
-        listener_threads = []
-        subscribed_workers = set()
-        def store_listener(wid, meta: Master.ControllerMetadata):
-            q = meta._store.get_outgoing_queue()
-            while True:
-                publish_msg: store_pb2.Publish = q.get()
-                # Process the publish_msg as needed
-                with self._ref_lock:
-                    self._refs[publish_msg.ref] = wid
-                
-        def monitor_store():
-            while True:
-                self._controllers_event.wait()
-                self._controllers_event.clear()
-                for wid, meta in self._controllers.items():
-                    if wid not in subscribed_workers:
-                        subscribed_workers.add(wid)
-                        t = threading.Thread(target=store_listener, args=(wid, meta), daemon=True)
-                        t.start()
-                        listener_threads.append(t)
-        
-        monitor_thread = threading.Thread(target=monitor_store, daemon=True)
-        monitor_thread.start()
-        listener_threads.append(monitor_thread)
-
     def _spawn_local_session_reader(self, outgoing_q: Queue, stop_event: threading.Event, tag: str = "local") -> tuple[threading.Thread, Callable[[controller_pb2.Message], None]]:
         """Spawn a background thread that runs a single-message Controller.Session locally
         and pushes any responses into outgoing_q as (tag, controller_message).
@@ -362,15 +485,8 @@ class Master(
         (using Ack.message to carry object refs or errors) and yield it back to the client immediately.
         """
 
-        outgoing_q = Queue()
+        outgoing_q = self._controller_proxy.get_outgoing_queue()
         stop_event = threading.Event()
-
-        # track which worker listeners have been started for this session
-        subscribed_workers = set()
-        listener_threads = []
-
-        t, submit_local = self._spawn_local_session_reader(outgoing_q, stop_event, tag="local")
-        listener_threads.append(t)
 
         def request_reader():
             try:
@@ -380,31 +496,26 @@ class Master(
                         req = request.apply_to_worker
                         worker_id = req.worker_id
                         controller_message = req.controller_message
-                        if worker_id is None or worker_id not in self._controllers:
+                        if worker_id is None or not self._controller_proxy.exist_worker(worker_id):
                             # handle locally: spawn a local session reader that will publish responses
                             try:
-                                submit_local(controller_message)
+                                self._controller_proxy.submit_local(controller_message)
                             except Exception as e:
                                 log.exception("Error starting local session reader")
                                 outgoing_q.put(("local", platform_pb2.Message(type=platform_pb2.MessageType.ACK, ack=platform_pb2.Ack(error=str(e)))))
                         else:
                             # forward to worker controller asynchronously
-                            meta = self._controllers[worker_id]
-                            meta._controller.send_message(controller_message)
+                            meta = self._controller_proxy.get_worker(worker_id)
+                            if meta is not None:
+                                meta._controller.send_message(controller_message)
                     elif request.type == platform_pb2.MessageType.BROADCAST:
                         # try to call local broadcast if exists, otherwise send to all controllers
                         controller_message = request.broadcast.controller_message
                         try:
-                            submit_local(controller_message)
-                            for meta in self._controllers.values():
-                                meta._controller.send_message(controller_message)
+                            self._controller_proxy.submit_local(controller_message)
+                            self._controller_proxy.broadcast(controller_message)
                         except Exception as e:
                             log.error(f"Error broadcasting to local and workers: {e}")
-                            for meta in list(self._controllers.values()):
-                                try:
-                                    meta._controller.send_message(request.broadcast.controller_message)
-                                except Exception:
-                                    log.exception("Failed to send broadcast to worker")
                     else:
                         log.error(f"Unknown message type received: {request.type}")
             except grpc.RpcError as e:
@@ -413,59 +524,11 @@ class Master(
                 log.exception("Error reading session requests")
             finally:
                 stop_event.set()
-                # put sentinel to unblock main sender
-                try:
-                    outgoing_q.put(None)
-                except Exception:
-                    pass
-                # also unblock local session reader (if any) and worker listeners by sending sentinel None
-                try:
-                    # submit_local may not exist in this scope if spawn wasn't called, so guard
-                    submit_local(None)
-                except Exception:
-                    pass
-                try:
-                    for meta in list(self._controllers.values()):
-                        try:
-                            q = meta._controller.get_outgoing_queue()
-                            q.put(None)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
 
-        def worker_listener(meta: Master.ControllerMetadata):
-            q = None
-            try:
-                q = meta._controller.get_outgoing_queue()
-            except Exception:
-                log.exception("ControllerContext has no outgoing queue")
-                return
-            while not stop_event.is_set():
-                try:
-                    msg = q.get()
-                except Exception:
-                    continue
-                # sentinel None => worker shutting down or we asked to stop
-                if msg is None:
-                    break
-                # publish tuple (worker_id, controller_message)
-                outgoing_q.put((meta._worker_id, msg))
-
-        def monitor_new_controllers():
-            while not stop_event.is_set():
-                for wid, meta in list(self._controllers.items()):
-                    if wid not in subscribed_workers:
-                        t = threading.Thread(target=worker_listener, args=(meta,), daemon=True)
-                        t.start()
-                        listener_threads.append(t)
-                        subscribed_workers.add(wid)
 
         # start background threads
         req_thread = threading.Thread(target=request_reader, daemon=True)
         req_thread.start()
-        monitor_thread = threading.Thread(target=monitor_new_controllers, daemon=True)
-        monitor_thread.start()
 
         # main loop: forward controller responses to client as cluster messages
         try:
@@ -488,19 +551,7 @@ class Master(
         finally:
             stop_event.set()
             # attempt to join threads briefly
-            try:
-                req_thread.join()
-            except Exception:
-                pass
-            try:
-                monitor_thread.join()
-            except Exception:
-                pass
-            try:
-                for t in listener_threads:
-                    t.join()
-            except Exception:
-                pass
+            req_thread.join()
 
     def AddWorkerCommand(self, request, context):
         return self.addWorker(request)
@@ -508,21 +559,21 @@ class Master(
 
     
     def addWorker(self, add_worker_request: cluster_pb2.AddWorker):
-        worker_metadata = Master.ControllerMetadata(
+        worker_metadata = Master.Metadata(
             add_worker_request.host,
             add_worker_request.port,
             add_worker_request.worker_id,
             add_worker_request.worker_rank
         )
-        self._controllers[add_worker_request.worker_id] = worker_metadata
-        self._controllers_event.set()
+        self._controller_proxy.add_worker(add_worker_request.worker_id, worker_metadata)
+        self._store_proxy.add_worker(add_worker_request.worker_id, worker_metadata)
         log.info(f"Worker {add_worker_request.worker_id} added.")
         return cluster_pb2.Ack(
             message=f"Worker {add_worker_request.worker_id} added successfully."
         )
     def removeWorker(self, remove_worker_request: cluster_pb2.RemoveWorker):
-        if remove_worker_request.worker_id in self._controllers:
-            del self._controllers[remove_worker_request.worker_id]
+        if remove_worker_request.worker_id in self._controller_proxy.get_workers():
+            self._controller_proxy.remove_worker(remove_worker_request.worker_id)
             log.info(f"Worker {remove_worker_request.worker_id} removed.")
             return cluster_pb2.Ack(
                 message=f"Worker {remove_worker_request.worker_id} removed successfully."
@@ -534,7 +585,7 @@ class Master(
             )
     def getWorkers(self):
         workers = []
-        for controller in self._controllers.values():
+        for controller in self._controller_proxy.get_workers():
             worker_id = controller._worker_id
             host = controller._host
             port = controller._port
@@ -565,13 +616,12 @@ class Master(
 
     def get_object(self, request: store_pb2.GetObjectRequest) -> store_pb2.GetObjectResponse:
         ref = request.ref
-        with self._ref_lock:
-            if ref not in self._refs:
-                return store_pb2.GetObjectResponse(
-                    error=f"Reference {ref} not found."
-                )
-        worker_id = self._refs[ref]
-        meta = self._controllers[worker_id]
+        if not self._store_proxy.exists(ref):
+            return store_pb2.GetObjectResponse(
+                error=f"Reference {ref} not found."
+            )
+        worker_id = self._store_proxy.get_worker_id(ref)
+        meta = self._controller_proxy.get_worker(worker_id)
         channel = grpc.insecure_channel(f"{meta._host}:{meta._port}")
         stub = store_pb2_grpc.StoreServiceStub(channel)
         resp: store_pb2.GetObjectResponse = stub.GetObject(request)
