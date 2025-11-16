@@ -11,6 +11,14 @@ class Scheduler:
         self._workers = self.get_workers().workers
         for worker in self._workers:
             log.info(f"Worker {worker.worker_id} is available at {worker.host}:{worker.port} with worker rank {worker.worker_rank}")
+        host = master_addr.split(":")[0]
+        port = int(master_addr.split(":")[1])
+        self._workers.append(cluster_pb2.AddWorker(
+            worker_id="0",
+            host=host,
+            port=port,
+            worker_rank=0
+        ))
     def get_workers(self) -> cluster_pb2.GetWorkersResponse:
         request = cluster_pb2.GetWorkersRequest()
         channel = grpc.insecure_channel(self._master_addr)

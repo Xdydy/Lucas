@@ -33,4 +33,5 @@ service StoreService {
     // Publish is a server-streaming RPC: client sends an empty request and the server
     // continuously streams `Publish` messages (worker_id + ref) to the client.
     rpc PublishSession(google.protobuf.Empty) returns (stream Publish) {}
+    rpc Subscribe(google.protobuf.Empty) returns (stream Publish) {}
 }

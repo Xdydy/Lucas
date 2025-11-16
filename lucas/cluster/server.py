@@ -84,22 +84,35 @@ class StoreContext:
         self._channel = grpc.insecure_channel(peer_address)
         self._stub = store_pb2_grpc.StoreServiceStub(self._channel)
         self._resp_stream = self._stub.PublishSession(empty_pb2.Empty())
+        self._subscribe_stream = self._stub.Subscribe(empty_pb2.Empty())
         self._outgoing_queue = Queue()
+        self._subscribe_outgoing_queue = Queue()
         self._resp_thread = threading.Thread(target=self._receive_messages, daemon=True)
+        self._subscribe_resp_thread = threading.Thread(target=self._receive_subscribe_messages, daemon=True)
         self._resp_thread.start()
+        self._subscribe_resp_thread.start()
 
     def _receive_messages(self):
         for publish in self._resp_stream:
             self._outgoing_queue.put(publish)
 
+    def _receive_subscribe_messages(self):
+        for publish in self._subscribe_stream:
+            self._subscribe_outgoing_queue.put(publish)
+
     def get_outgoing_queue(self):
         return self._outgoing_queue
+    
+    def get_subscribe_outgoing_queue(self):
+        return self._subscribe_outgoing_queue
 
 class StorageService(store_pb2_grpc.StoreServiceServicer):
     def __init__(self):
         super().__init__()
         self._data_store = {}
         self._publish_obj = Queue()
+        self._subscribe_obj = Queue()
+        self._subscribe_list: dict[str, futures.Future] = {}
 
     def GetObject(self, request, context):
         request: store_pb2.GetObjectRequest
@@ -122,12 +135,24 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
         while True:
             publish_msg: store_pb2.Publish = self._publish_obj.get()
             yield publish_msg
+        
+    def Subscribe(self, request, context):
+        while True:
+            subscribe_ref = self._subscribe_obj.get()
+            yield store_pb2.Publish(ref=subscribe_ref)
     
     def publish(self, publish_msg: store_pb2.Publish):
         self._publish_obj.put(publish_msg)
+
+    def subscribe(self, ref: str) -> futures.Future:
+        self._subscribe_obj.put(ref)
+        self._subscribe_list[ref] = futures.Future()
+        return self._subscribe_list[ref]
     
     def put(self, key: str, data: Any):
         self._data_store[key] = data
+        if key in self._subscribe_list:
+            self._subscribe_list[key].set_result(data)
         self.publish(store_pb2.Publish(ref=key))
         log.info(f"Data stored with key: {key}")
     def get(self, key: str) -> Any:
@@ -148,8 +173,8 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer, StorageService):
         if data_type == controller_pb2.Data.ObjectType.OBJ_REF:
             obj_id = data.ref
             if self.get(obj_id) is None:
-                log.error(f"Object reference {obj_id} not found.")
-                raise RuntimeError(f"Object reference {obj_id} not found.")
+                f = self.subscribe(obj_id)
+                return f.result()
             return self.get(obj_id)
         elif data_type == controller_pb2.Data.ObjectType.OBJ_ENCODED:
             obj_data = data.encoded
@@ -284,7 +309,7 @@ class Master(
             self._store = StoreContext(f"{host}:{port}")
 
     class StoreProxy:
-        def __init__(self):
+        def __init__(self, out_store: StorageService):
             self._refs = {}
             self._refs_lock = threading.Lock()
             self._new_worker = Queue()
@@ -293,6 +318,39 @@ class Master(
             self._subscriber_workers = set()
 
             self._running = False
+
+            self._metas: dict[str, Master.Metadata] = {}
+
+            # self._subscribes = Queue()
+            self._subscribes_out = Queue()
+            self._out_store = out_store
+        
+        def handle_subscribe(self, msg: store_pb2.Publish):
+            with self._refs_lock:
+                worker_id = self._refs[msg.ref]
+            sub_meta = self._metas[worker_id]
+            channel = grpc.insecure_channel(f"{sub_meta._host}:{sub_meta._port}")
+            stub = store_pb2_grpc.StoreServiceStub(channel)
+            request = store_pb2.GetObjectRequest(ref=msg.ref)
+            resp: store_pb2.GetObjectResponse = stub.GetObject(request)
+            if resp.error != "":
+                log.error(f"Error getting object: {resp.error}")
+            else:
+                self._out_store.put(msg.ref, cloudpickle.loads(resp.data))
+
+        def _spawn_local_session_reader(self):
+            def gen():
+                yield 0
+            def local_store_runner():
+                try:
+                    for resp in self._out_store.Subscribe(gen(), None):
+                        self.handle_subscribe(resp)
+                except Exception as e:
+                    log.error(f"Error in local_store_runner: {e}")
+            
+            t = threading.Thread(target=local_store_runner, daemon=True)
+            t.start()
+            self._listener_threads.append(t)
         
         def listen(self):
             self._running = True
@@ -305,16 +363,31 @@ class Master(
                     # Process the publish_msg as needed
                     with self._refs_lock:
                         self._refs[publish_msg.ref] = wid
+            
+            def subscriber_listener(wid, meta: Master.Metadata):
+                q = meta._store.get_subscribe_outgoing_queue()
+                while self._running:
+                    subscribe_msg: store_pb2.Publish = q.get()
+                    if subscribe_msg is None:
+                        continue
+                    # Process the subscribe_msg as needed
+                    self.handle_subscribe(subscribe_msg)
                     
+
+            
             def monitor_store():
                 while self._running:
                     wid, meta = self._new_worker.get()
                     if wid not in self._subscriber_workers:
                         self._subscriber_workers.add(wid)
+                        self._metas[wid] = meta
                         t = threading.Thread(target=store_listener, args=(wid, meta), daemon=True)
+                        t_sub = threading.Thread(target=subscriber_listener, args=(wid, meta), daemon=True)
                         t.start()
+                        t_sub.start()
                         self._listener_threads.append(t)
             
+            self._spawn_local_session_reader()
             monitor_thread = threading.Thread(target=monitor_store, daemon=True)
             monitor_thread.start()
             self._listener_threads.append(monitor_thread)
@@ -435,7 +508,7 @@ class Master(
     def __init__(self):
         Controller.__init__(self)
         # self._controllers: dict[str, Master.Metadata] = {}
-        self._store_proxy = Master.StoreProxy()
+        self._store_proxy = Master.StoreProxy(self)
         self._store_proxy.listen()
         self._controller_proxy = Master.ControllerProxy(self)
         self._controller_proxy.listen()
