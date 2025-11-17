@@ -1,7 +1,7 @@
 import os
 from typing import Any, Callable
 from utils.memory import parse_memory_string
-from utils.mapper import to_proto_dag
+from utils.mapper import to_proto_append_dag_node_list
 from lucas import Runtime, Function, ActorClass, ActorInstance
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
@@ -50,27 +50,17 @@ class ActorContext:
             options=[("grpc.max_receive_message_length", 512 * 1024 * 1024)],
         )
         self._stub = controller_pb2_grpc.ServiceStub(self._channel)
-        # self._cluster_stub = cluster_pb2_grpc.ServiceStub(self._channel)
         self._q = queue.Queue()
-        # self._cluster_q = queue.Queue()
         self._response_stream = self._stub.Session(self._generate())
-        # self._cluster_resp_stream = self._cluster_stub.Session(self._cluster_generate())
         self._result_map: dict[str, Future] = {}
         self._obj_map: dict[str, Future] = {}
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
-        # self._cluster_thread = threading.Thread(target=self._run_cluster, daemon=True)
-
         self._thread.start()
-        # self._cluster_thread.start()
 
     def _generate(self):
         while True:
             msg = self._q.get()
-            yield msg
-    def _cluster_generate(self):
-        while True:
-            msg = self._cluster_q.get()
             yield msg
 
     def _run(self):
@@ -108,26 +98,6 @@ class ActorContext:
                             self._obj_map[obj_id] = future
             time.sleep(1)
 
-    # def _run_cluster(self):
-    #     while True:
-    #         for response in self._cluster_resp_stream:
-    #             response: cluster_pb2.Message
-    #             if response.Type == cluster_pb2.MessageType.OBJECT_RESPONSE:
-    #                 obj_response: cluster_pb2.ObjectResponse = response.ObjectResponse
-    #                 obj_id = obj_response.ID
-    #                 value = obj_response.Value
-    #                 value = EncDec.decode(value)
-    #                 with self._lock:
-    #                     if obj_id in self._obj_map:
-    #                         future = self._obj_map[obj_id]
-    #                         if not future.done():
-    #                             future.set_result(value)
-    #                     else:
-    #                         future = Future()
-    #                         future.set_result(value)
-    #                         self._obj_map[obj_id] = future
-    #         time.sleep(1)
-
     def get_result(self, key: str) -> Future:
         with self._lock:
             if key not in self._result_map:
@@ -144,9 +114,6 @@ class ActorContext:
         message.AppID = self._app_id
         self._q.put(message)
     
-    # def send_cluster(self, message: cluster_pb2.Message):
-    #     self._cluster_q.put(message)
-
 
 class ActorRuntime(Runtime):
     def __init__(self, metadata: Metadata):
@@ -396,14 +363,6 @@ class ActorExecutor(Executor):
     def __init__(self, dag):
         super().__init__(dag)
 
-        # send DAG to controller
-        proto_dag = to_proto_dag(dag)
-        message = controller_pb2.Message(
-            Type=controller_pb2.CommandType.FR_DAG,
-            DAG=proto_dag,
-        )
-        actorContext.send(message)
-
     def _get_real_result(self, data: controller_pb2.Data):
         message = controller_pb2.Message(
             Type = controller_pb2.CommandType.FR_REQUEST_OBJECT,
@@ -419,6 +378,16 @@ class ActorExecutor(Executor):
 
     def execute(self):
         session_id = str(uuid.uuid4())
+        
+        # send DAG nodes to controller
+        proto_append_dag_node_list = to_proto_append_dag_node_list(self.dag, session_id)
+        for node in proto_append_dag_node_list:
+            message = controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_APPEND_DAG_NODE,
+                AppendDAGNode=node,
+            )
+            actorContext.send(message)
+
         while not self.dag.hasDone():
             _task_lock = threading.Lock()
             task: list[DAGNode] = []
