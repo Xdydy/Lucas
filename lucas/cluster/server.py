@@ -128,7 +128,11 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
         request: store_pb2.PutObjectRequest
         data = request.data
         key = request.key
+        data = cloudpickle.loads(data)
         self.put(key, data)
+        self.publish(store_pb2.Publish(ref=key))
+        if key in self._subscribe_list:
+            self._subscribe_list[key].set_result(data)
         return store_pb2.PutObjectResponse(ref=key)
     
     def PublishSession(self, request, context):
@@ -151,19 +155,15 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
     
     def put(self, key: str, data: Any):
         self._data_store[key] = data
-        if key in self._subscribe_list:
-            self._subscribe_list[key].set_result(data)
-        self.publish(store_pb2.Publish(ref=key))
         log.info(f"Data stored with key: {key}")
     def get(self, key: str) -> Any:
         if key not in self._data_store:
             return None
         return self._data_store[key]    
 
-class Controller(controller_pb2_grpc.ControllerServiceServicer, StorageService):
-    def __init__(self):
-        controller_pb2_grpc.ControllerServiceServicer.__init__(self)
-        StorageService.__init__(self)
+class Controller(controller_pb2_grpc.ControllerServiceServicer):
+    def __init__(self, store_service: StorageService):
+        self._store_service = store_service
         self._funcs: dict[str, FunctionExecutor] = {}
         self._classes: dict[str, ClassExecutor] = {}
         self._pending_funcs = []
@@ -172,10 +172,10 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer, StorageService):
         data_type = data.type
         if data_type == controller_pb2.Data.ObjectType.OBJ_REF:
             obj_id = data.ref
-            if self.get(obj_id) is None:
-                f = self.subscribe(obj_id)
+            if self._store_service.get(obj_id) is None:
+                f = self._store_service.subscribe(obj_id)
                 return f.result()
-            return self.get(obj_id)
+            return self._store_service.get(obj_id)
         elif data_type == controller_pb2.Data.ObjectType.OBJ_ENCODED:
             obj_data = data.encoded
             obj = cloudpickle.loads(obj_data)
@@ -183,7 +183,8 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer, StorageService):
     
     def _transmit_result(self, result, session_id, instance_id, function_name) -> controller_pb2.Data:
         obj_id = f"{session_id}_{instance_id}_{function_name}"
-        self.put(obj_id, result)
+        put_request = store_pb2.PutObjectRequest(key=obj_id, data=cloudpickle.dumps(result))
+        self._store_service.PutObject(put_request, None)
         return controller_pb2.Data(
             type=controller_pb2.Data.ObjectType.OBJ_REF,
             ref=obj_id
@@ -284,6 +285,9 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer, StorageService):
         elif request.type == controller_pb2.MessageType.INVOKE_FUNCTION:
             resp = self._invoke_function(request.invoke_function)
         return resp
+    
+    def get_store_service(self):
+        return self._store_service
     def Session(self, request_iterator, context):
         for request in request_iterator:
             resp = self.apply(request)
@@ -296,8 +300,9 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer, StorageService):
 
 class Master(
     cluster_pb2_grpc.ClusterServiceServicer, 
+    platform_pb2_grpc.PlatformServicer,
     Controller, 
-    platform_pb2_grpc.PlatformServicer
+    StorageService
 ):
     class Metadata:
         def __init__(self, host: str, port: int, worker_id: str, rank: int):
@@ -333,10 +338,12 @@ class Master(
             stub = store_pb2_grpc.StoreServiceStub(channel)
             request = store_pb2.GetObjectRequest(ref=msg.ref)
             resp: store_pb2.GetObjectResponse = stub.GetObject(request)
+            put_request = store_pb2.PutObjectRequest(key=msg.ref, data=resp.data)
             if resp.error != "":
                 log.error(f"Error getting object: {resp.error}")
             else:
-                self._out_store.put(msg.ref, cloudpickle.loads(resp.data))
+                self._out_store.PutObject(put_request, None)
+                # self._out_store.put(msg.ref, cloudpickle.loads(resp.data))
 
         def _spawn_local_session_reader(self):
             def gen():
@@ -506,9 +513,10 @@ class Master(
     
             
     def __init__(self):
-        Controller.__init__(self)
+        StorageService.__init__(self)
+        Controller.__init__(self, self)
         # self._controllers: dict[str, Master.Metadata] = {}
-        self._store_proxy = Master.StoreProxy(self)
+        self._store_proxy = Master.StoreProxy(self.get_store_service())
         self._store_proxy.listen()
         self._controller_proxy = Master.ControllerProxy(self)
         self._controller_proxy.listen()
@@ -703,10 +711,12 @@ class Master(
         return resp
         
 class Worker(
-    Controller
+    Controller,
+    StorageService
 ):
     def __init__(self, master_address: str, worker_host: str, worker_port: int, rank=1):
-        super().__init__()
+        StorageService.__init__(self)
+        Controller.__init__(self, self)
         self._worker_id = str(uuid.uuid4())
         self._master_address = master_address
         self._worker_host = worker_host
@@ -750,7 +760,7 @@ if __name__ == "__main__":
     if args.role == "master":
         server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         master = Master()
-        store_pb2_grpc.add_StoreServiceServicer_to_server(master, server)
+        store_pb2_grpc.add_StoreServiceServicer_to_server(master.get_store_service(), server)
         cluster_pb2_grpc.add_ClusterServiceServicer_to_server(master, server)
         controller_pb2_grpc.add_ControllerServiceServicer_to_server(master, server)
         platform_pb2_grpc.add_PlatformServicer_to_server(master, server)
@@ -768,7 +778,7 @@ if __name__ == "__main__":
             rank=args.rank,
         )
         controller_pb2_grpc.add_ControllerServiceServicer_to_server(worker, server)
-        store_pb2_grpc.add_StoreServiceServicer_to_server(worker, server)
+        store_pb2_grpc.add_StoreServiceServicer_to_server(worker.get_store_service(), server)
         server.add_insecure_port(f"[::]:{args.worker_port}")
         server.start()
         worker.connect_to_master()
