@@ -219,7 +219,7 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
                 )
             )
         executor = self._funcs[function_name]
-        sandbox = executor.create_instance(instance_id)
+        sandbox = executor.create_instance(f"{session_id}_{instance_id}")
         data = self._transmit_data(args_data)
         sandbox.apply_args({param_name: data})
         log.info(f"Appended args for function: {function_name}, instance: {instance_id}")
@@ -254,7 +254,7 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
                 )
             )
         executor = self._funcs[function_name]
-        sandbox = executor.create_instance(instance_id)
+        sandbox = executor.create_instance(f"{invoke_fn_request.session_id}_{instance_id}")
         sandbox.set_run()
         if sandbox.can_run():
             result = sandbox.run()

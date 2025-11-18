@@ -2,9 +2,9 @@ import os
 os.environ['provider'] = 'cluster'
 from lucas import function, workflow, Workflow
 from lucas.cluster.client import Context, ClusterExecutor
-from lucas.cluster.scheduler import RobinScheduler
+from lucas.cluster.scheduler import PathScheduler
 context = Context.create_context()
-scheduler = RobinScheduler()
+scheduler = PathScheduler()
 context.set_scheduler(scheduler)
 
 @function
@@ -35,4 +35,4 @@ for i in range(1000):
     result = w_func()
 end_t = time.time()
 print(result)
-print(f"Execution time: {(end_t - start_t)} seconds")
+print(f"Execution time: {end_t - start_t} seconds")
