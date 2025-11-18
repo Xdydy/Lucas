@@ -1,5 +1,5 @@
 from lucas.utils.logging import log
-from lucas.workflow.dag import DAG, ControlNode, DataNode
+from lucas.workflow.dag import DAG, ControlNode, DAGNode, DataNode
 
 from .protos import cluster_pb2, cluster_pb2_grpc, controller_pb2, platform_pb2
 import grpc
@@ -80,6 +80,115 @@ class RobinScheduler(Scheduler):
                 if in_dags[data_node] == 0:
                     zero_nodes.append(data_node)
 
+    def schedule(self, msg):
+        if msg.type == controller_pb2.MessageType.APPEND_FUNCTION:
+            return platform_pb2.Message(
+                type=platform_pb2.MessageType.BROADCAST,
+                broadcast=platform_pb2.Broadcast(
+                    controller_message=msg
+                )
+            )
+        elif msg.type == controller_pb2.MessageType.APPEND_FUNCTION_ARG:
+            arg = msg.append_function_arg
+            func_id = arg.instance_id
+            apply_worker_id = self._node_to_worker[func_id]
+            return platform_pb2.Message(
+                type=platform_pb2.MessageType.APPLY_TO_WORKER,
+                apply_to_worker=platform_pb2.ApplyToWorker(
+                    controller_message=msg,
+                    worker_id=apply_worker_id
+                )
+            )
+        elif msg.type == controller_pb2.MessageType.INVOKE_FUNCTION:
+            invoke_func = msg.invoke_function
+            func_id = invoke_func.instance_id
+            apply_worker_id = self._node_to_worker[func_id]
+            return platform_pb2.Message(
+                type=platform_pb2.MessageType.APPLY_TO_WORKER,
+                apply_to_worker=platform_pb2.ApplyToWorker(
+                    controller_message=msg,
+                    worker_id=apply_worker_id
+                )
+            )
+
+class PathScheduler(Scheduler):
+    class Path:
+        def __init__(self):
+            self._nodes: list[DAGNode] = []
+            self._apply_to_worker = None
+        def get(self):
+            return self._nodes
+        def add(self, node):
+            self._nodes.append(node)
+        def get_last_node(self):
+            return self._nodes[-1]
+        def set_apply_to_worker(self, worker_id):
+            self._apply_to_worker = worker_id
+        def get_apply_to_worker(self):
+            return self._apply_to_worker
+        
+    def __init__(self, master_addr: str = "localhost:50051"):
+        super().__init__(master_addr)
+        self._node_to_worker = {}
+        self._in_dags = {}
+        self._paths: list[PathScheduler.Path] = []
+        self._zero_nodes = []
+        self._visited: dict[DAGNode, PathScheduler.Path] = {}
+    
+    def analyze(self, dag: DAG):
+        nodes = dag.get_nodes()
+        self._in_dags = {}
+        for node in nodes:
+            self._in_dags[node] = 0
+        for node in nodes:
+            if isinstance(node, DataNode):
+                for ctl_node in node.get_succ_control_nodes():
+                    self._in_dags[ctl_node] += 1
+            elif isinstance(node, ControlNode):
+                self._in_dags[node.get_data_node()] += 1
+
+        self._zero_nodes = [node for node, in_degree in self._in_dags.items() if in_degree == 0]
+        self._paths = []
+        while len(self._zero_nodes) > 0:
+            node = self._zero_nodes.pop()
+            if isinstance(node, DataNode):
+                if node.get_pre_control_node() is not None:
+                    pre_ctl_node = node.get_pre_control_node()
+                    path = self._visited[pre_ctl_node]
+                    path.add(node)
+                else:
+                    path = self.Path()
+                    self._paths.append(path)
+                    path.add(node)
+                self._visited[node] = path
+                for ctl_node in node.get_succ_control_nodes():
+                    self._in_dags[ctl_node] -= 1
+                    if self._in_dags[ctl_node] == 0:
+                        self._zero_nodes.append(ctl_node)
+            elif isinstance(node, ControlNode):
+                if len(node.get_pre_data_nodes()) > 0:
+                    pre_data_node = node.get_pre_data_nodes()[0]
+                    path = self._visited[pre_data_node]
+                    path.add(node)
+                else:
+                    path = self.Path()
+                    self._paths.append(path)
+                    path.add(node)
+                self._visited[node] = path
+                data_node = node.get_data_node()
+                self._in_dags[data_node] -= 1
+                if self._in_dags[data_node] == 0:
+                    self._zero_nodes.append(data_node)
+        
+        worker_index = 0
+        for path in self._paths:
+            path.set_apply_to_worker(self._workers[worker_index].worker_id)
+            worker_index = (worker_index + 1) % len(self._workers)
+        
+        for path in self._paths:
+            for node in path.get():
+                metadata = node.metadata()
+                self._node_to_worker[metadata['id']] = path.get_apply_to_worker()
     def schedule(self, msg):
         if msg.type == controller_pb2.MessageType.APPEND_FUNCTION:
             return platform_pb2.Message(
