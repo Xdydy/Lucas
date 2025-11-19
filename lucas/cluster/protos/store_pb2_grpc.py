@@ -45,6 +45,16 @@ class StoreServiceStub(object):
                 request_serializer=store__pb2.PutObjectRequest.SerializeToString,
                 response_deserializer=store__pb2.PutObjectResponse.FromString,
                 _registered_method=True)
+        self.DeleteObject = channel.unary_unary(
+                '/store.StoreService/DeleteObject',
+                request_serializer=store__pb2.DeleteObjectRequest.SerializeToString,
+                response_deserializer=store__pb2.DeleteObjectResponse.FromString,
+                _registered_method=True)
+        self.ClearStore = channel.unary_unary(
+                '/store.StoreService/ClearStore',
+                request_serializer=store__pb2.ClearStoreRequest.SerializeToString,
+                response_deserializer=store__pb2.ClearStoreResponse.FromString,
+                _registered_method=True)
         self.PublishSession = channel.unary_stream(
                 '/store.StoreService/PublishSession',
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
@@ -68,6 +78,20 @@ class StoreServiceServicer(object):
 
     def PutObject(self, request, context):
         """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteObject(self, request, context):
+        """Delete an object from the store.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ClearStore(self, request, context):
+        """Clear the entire store.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -98,6 +122,16 @@ def add_StoreServiceServicer_to_server(servicer, server):
                     servicer.PutObject,
                     request_deserializer=store__pb2.PutObjectRequest.FromString,
                     response_serializer=store__pb2.PutObjectResponse.SerializeToString,
+            ),
+            'DeleteObject': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteObject,
+                    request_deserializer=store__pb2.DeleteObjectRequest.FromString,
+                    response_serializer=store__pb2.DeleteObjectResponse.SerializeToString,
+            ),
+            'ClearStore': grpc.unary_unary_rpc_method_handler(
+                    servicer.ClearStore,
+                    request_deserializer=store__pb2.ClearStoreRequest.FromString,
+                    response_serializer=store__pb2.ClearStoreResponse.SerializeToString,
             ),
             'PublishSession': grpc.unary_stream_rpc_method_handler(
                     servicer.PublishSession,
@@ -164,6 +198,60 @@ class StoreService(object):
             '/store.StoreService/PutObject',
             store__pb2.PutObjectRequest.SerializeToString,
             store__pb2.PutObjectResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteObject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/store.StoreService/DeleteObject',
+            store__pb2.DeleteObjectRequest.SerializeToString,
+            store__pb2.DeleteObjectResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ClearStore(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/store.StoreService/ClearStore',
+            store__pb2.ClearStoreRequest.SerializeToString,
+            store__pb2.ClearStoreResponse.FromString,
             options,
             channel_credentials,
             insecure,

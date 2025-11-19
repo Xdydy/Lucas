@@ -21,7 +21,7 @@ class ControllerContext:
         self._msg_queue = Queue()
         # queue where this ControllerContext will publish incoming controller responses
         self._outgoing_queue = Queue()
-        self._resp_stream = self._stub.Session(self._message_generator())
+        self._resp_stream: grpc.Call = self._stub.Session(self._message_generator())
         self._result_lock = threading.Lock()
         # map obj_id -> concurrent.futures.Future
         self._results = {}
@@ -40,19 +40,27 @@ class ControllerContext:
     def send_message(self, msg: controller_pb2.Message):
         self._msg_queue.put(msg)
     def _receive_messages(self):
-        for response in self._resp_stream:
-            response: controller_pb2.Message
-            if response.type == controller_pb2.MessageType.RT_RESULT:
-                self._handle_rt_result(response.return_result)
-            elif response.type == controller_pb2.MessageType.ACK:
-                self._handle_ack(response.ack)
-            else:
-                log.warning(f"Unknown response type: {response.type}")
-            # publish raw controller message to outgoing queue for master/session forwarding
-            try:
-                self._outgoing_queue.put(response)
-            except Exception:
-                log.exception("Failed to put controller response into outgoing queue")
+        try:
+            for response in self._resp_stream:
+                response: controller_pb2.Message
+                if response.type == controller_pb2.MessageType.RT_RESULT:
+                    self._handle_rt_result(response.return_result)
+                elif response.type == controller_pb2.MessageType.ACK:
+                    self._handle_ack(response.ack)
+                else:
+                    log.warning(f"Unknown response type: {response.type}")
+                # publish raw controller message to outgoing queue for master/session forwarding
+                try:
+                    self._outgoing_queue.put(response)
+                except Exception:
+                    log.exception("Failed to put controller response into outgoing queue")
+        except grpc.RpcError as e:
+            log.info("Controller response stream closed by server")
+            self._msg_queue.put(None)
+            self._outgoing_queue.put(None)
+            self._resp_stream.cancel()
+        except Exception as e:
+            log.error(f"Error in controller response stream: {e}")
 
     def get_outgoing_queue(self):
         return self._outgoing_queue
@@ -83,8 +91,8 @@ class StoreContext:
         self._peer_address = peer_address
         self._channel = grpc.insecure_channel(peer_address)
         self._stub = store_pb2_grpc.StoreServiceStub(self._channel)
-        self._resp_stream = self._stub.PublishSession(empty_pb2.Empty())
-        self._subscribe_stream = self._stub.Subscribe(empty_pb2.Empty())
+        self._resp_stream: grpc.Call = self._stub.PublishSession(empty_pb2.Empty())
+        self._subscribe_stream: grpc.Call = self._stub.Subscribe(empty_pb2.Empty())
         self._outgoing_queue = Queue()
         self._subscribe_outgoing_queue = Queue()
         self._resp_thread = threading.Thread(target=self._receive_messages, daemon=True)
@@ -93,12 +101,26 @@ class StoreContext:
         self._subscribe_resp_thread.start()
 
     def _receive_messages(self):
-        for publish in self._resp_stream:
-            self._outgoing_queue.put(publish)
+        try:
+            for publish in self._resp_stream:
+                self._outgoing_queue.put(publish)
+        except grpc.RpcError as e:
+            log.info("Publish response stream closed by server")
+            self._outgoing_queue.put(None)
+            self._resp_stream.cancel()
+        except Exception as e:
+            log.error(f"Error in publish response stream: {e}")
 
     def _receive_subscribe_messages(self):
-        for publish in self._subscribe_stream:
-            self._subscribe_outgoing_queue.put(publish)
+        try:
+            for publish in self._subscribe_stream:
+                self._subscribe_outgoing_queue.put(publish)
+        except grpc.RpcError as e:
+            log.info("Subscribe response stream closed by server")
+            self._subscribe_outgoing_queue.put(None)
+            self._subscribe_stream.cancel()
+        except Exception as e:
+            log.error(f"Error in subscribe response stream: {e}")
 
     def get_outgoing_queue(self):
         return self._outgoing_queue
@@ -109,7 +131,7 @@ class StoreContext:
 class StorageService(store_pb2_grpc.StoreServiceServicer):
     def __init__(self):
         super().__init__()
-        self._data_store = {}
+        self._data_store: dict[str, Any] = {}
         self._publish_obj = Queue()
         self._subscribe_obj = Queue()
         self._subscribe_list: dict[str, futures.Future] = {}
@@ -134,6 +156,16 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
         if key in self._subscribe_list:
             self._subscribe_list[key].set_result(data)
         return store_pb2.PutObjectResponse(ref=key)
+    
+    def DeleteObject(self, request, context):
+        request: store_pb2.DeleteObjectRequest
+        success = self.delete(request.ref)
+        return store_pb2.DeleteObjectResponse(success=success)
+    
+    def ClearStore(self, request, context):
+        prefix = request.prefix
+        self.clear(prefix)
+        return store_pb2.ClearStoreResponse()
     
     def PublishSession(self, request, context):
         while True:
@@ -160,6 +192,22 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
         if key not in self._data_store:
             return None
         return self._data_store[key]    
+    def delete(self, key: str) -> bool:
+        if key in self._data_store:
+            del self._data_store[key]
+            log.info(f"Data with key: {key} deleted from store.")
+            return True
+        else:
+            return False
+    
+    def clear(self, prefix: str):
+        if prefix:
+            keys_to_delete = [key for key in self._data_store 
+            if key.startswith(prefix)]
+            for key in keys_to_delete:
+                del self._data_store[key]
+        else:
+            self._data_store.clear()
 
 class Controller(controller_pb2_grpc.ControllerServiceServicer):
     def __init__(self, store_service: StorageService):
@@ -315,7 +363,8 @@ class Master(
 
     class StoreProxy:
         def __init__(self, out_store: StorageService):
-            self._refs = {}
+            # map ref -> worker_id
+            self._refs: dict[str, str] = {}
             self._refs_lock = threading.Lock()
             self._new_worker = Queue()
         
@@ -366,7 +415,7 @@ class Master(
                 while self._running:
                     publish_msg: store_pb2.Publish = q.get()
                     if publish_msg is None:
-                        continue
+                        break
                     # Process the publish_msg as needed
                     with self._refs_lock:
                         self._refs[publish_msg.ref] = wid
@@ -376,7 +425,7 @@ class Master(
                 while self._running:
                     subscribe_msg: store_pb2.Publish = q.get()
                     if subscribe_msg is None:
-                        continue
+                        break
                     # Process the subscribe_msg as needed
                     self.handle_subscribe(subscribe_msg)
                     
@@ -409,6 +458,20 @@ class Master(
             
         def add_worker(self, wid, meta: "Master.Metadata"):
             self._new_worker.put((wid, meta))
+
+        def clear(self, request: store_pb2.ClearStoreRequest):
+            for meta in self._metas.values():
+                channel = grpc.insecure_channel(f"{meta._host}:{meta._port}")
+                stub = store_pb2_grpc.StoreServiceStub(channel)
+                stub.ClearStore(request)
+            with self._refs_lock:
+                if request.prefix:
+                    keys_to_delete = [key for key in self._refs 
+                    if key.startswith(request.prefix)]
+                    for key in keys_to_delete:
+                        del self._refs[key]
+                else:
+                    self._refs.clear()
         
         def shutdown(self):
             self._running = False
@@ -633,6 +696,7 @@ class Master(
             stop_event.set()
             # attempt to join threads briefly
             req_thread.join()
+            self.ClearStore(store_pb2.ClearStoreRequest(), None)
 
     def AddWorkerCommand(self, request, context):
         return self.addWorker(request)
@@ -694,6 +758,11 @@ class Master(
         if resp.error == "":
             return resp
         return self.get_object(request)
+    
+    def ClearStore(self, request, context):
+        StorageService.ClearStore(self, request, context)
+        self._store_proxy.clear(request)
+        return store_pb2.ClearStoreResponse()
 
     def get_object(self, request: store_pb2.GetObjectRequest) -> store_pb2.GetObjectResponse:
         ref = request.ref

@@ -27,6 +27,32 @@ class PutObjectRequest(_message.Message):
     key: str
     def __init__(self, data: _Optional[bytes] = ..., key: _Optional[str] = ...) -> None: ...
 
+class DeleteObjectRequest(_message.Message):
+    __slots__ = ("ref",)
+    REF_FIELD_NUMBER: _ClassVar[int]
+    ref: str
+    def __init__(self, ref: _Optional[str] = ...) -> None: ...
+
+class DeleteObjectResponse(_message.Message):
+    __slots__ = ("success", "error")
+    SUCCESS_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    success: bool
+    error: str
+    def __init__(self, success: bool = ..., error: _Optional[str] = ...) -> None: ...
+
+class ClearStoreRequest(_message.Message):
+    __slots__ = ("prefix",)
+    PREFIX_FIELD_NUMBER: _ClassVar[int]
+    prefix: str
+    def __init__(self, prefix: _Optional[str] = ...) -> None: ...
+
+class ClearStoreResponse(_message.Message):
+    __slots__ = ("error",)
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    error: str
+    def __init__(self, error: _Optional[str] = ...) -> None: ...
+
 class PutObjectResponse(_message.Message):
     __slots__ = ("ref", "error")
     REF_FIELD_NUMBER: _ClassVar[int]

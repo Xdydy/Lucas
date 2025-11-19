@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bstore.proto\x12\x05store\x1a\x1bgoogle/protobuf/empty.proto\"\x1f\n\x10GetObjectRequest\x12\x0b\n\x03ref\x18\x01 \x01(\t\"0\n\x11GetObjectResponse\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"-\n\x10PutObjectRequest\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\x0b\n\x03key\x18\x02 \x01(\t\"/\n\x11PutObjectResponse\x12\x0b\n\x03ref\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"\x16\n\x07Publish\x12\x0b\n\x03ref\x18\x02 \x01(\t2\x89\x02\n\x0cStoreService\x12@\n\tGetObject\x12\x17.store.GetObjectRequest\x1a\x18.store.GetObjectResponse\"\x00\x12@\n\tPutObject\x12\x17.store.PutObjectRequest\x1a\x18.store.PutObjectResponse\"\x00\x12<\n\x0ePublishSession\x12\x16.google.protobuf.Empty\x1a\x0e.store.Publish\"\x00\x30\x01\x12\x37\n\tSubscribe\x12\x16.google.protobuf.Empty\x1a\x0e.store.Publish\"\x00\x30\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bstore.proto\x12\x05store\x1a\x1bgoogle/protobuf/empty.proto\"\x1f\n\x10GetObjectRequest\x12\x0b\n\x03ref\x18\x01 \x01(\t\"0\n\x11GetObjectResponse\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"-\n\x10PutObjectRequest\x12\x0c\n\x04\x64\x61ta\x18\x01 \x01(\x0c\x12\x0b\n\x03key\x18\x02 \x01(\t\"\"\n\x13\x44\x65leteObjectRequest\x12\x0b\n\x03ref\x18\x01 \x01(\t\"6\n\x14\x44\x65leteObjectResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"#\n\x11\x43learStoreRequest\x12\x0e\n\x06prefix\x18\x01 \x01(\t\"#\n\x12\x43learStoreResponse\x12\r\n\x05\x65rror\x18\x01 \x01(\t\"/\n\x11PutObjectResponse\x12\x0b\n\x03ref\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"\x16\n\x07Publish\x12\x0b\n\x03ref\x18\x02 \x01(\t2\x99\x03\n\x0cStoreService\x12@\n\tGetObject\x12\x17.store.GetObjectRequest\x1a\x18.store.GetObjectResponse\"\x00\x12@\n\tPutObject\x12\x17.store.PutObjectRequest\x1a\x18.store.PutObjectResponse\"\x00\x12I\n\x0c\x44\x65leteObject\x12\x1a.store.DeleteObjectRequest\x1a\x1b.store.DeleteObjectResponse\"\x00\x12\x43\n\nClearStore\x12\x18.store.ClearStoreRequest\x1a\x19.store.ClearStoreResponse\"\x00\x12<\n\x0ePublishSession\x12\x16.google.protobuf.Empty\x1a\x0e.store.Publish\"\x00\x30\x01\x12\x37\n\tSubscribe\x12\x16.google.protobuf.Empty\x1a\x0e.store.Publish\"\x00\x30\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -38,10 +38,18 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_GETOBJECTRESPONSE']._serialized_end=132
   _globals['_PUTOBJECTREQUEST']._serialized_start=134
   _globals['_PUTOBJECTREQUEST']._serialized_end=179
-  _globals['_PUTOBJECTRESPONSE']._serialized_start=181
-  _globals['_PUTOBJECTRESPONSE']._serialized_end=228
-  _globals['_PUBLISH']._serialized_start=230
-  _globals['_PUBLISH']._serialized_end=252
-  _globals['_STORESERVICE']._serialized_start=255
-  _globals['_STORESERVICE']._serialized_end=520
+  _globals['_DELETEOBJECTREQUEST']._serialized_start=181
+  _globals['_DELETEOBJECTREQUEST']._serialized_end=215
+  _globals['_DELETEOBJECTRESPONSE']._serialized_start=217
+  _globals['_DELETEOBJECTRESPONSE']._serialized_end=271
+  _globals['_CLEARSTOREREQUEST']._serialized_start=273
+  _globals['_CLEARSTOREREQUEST']._serialized_end=308
+  _globals['_CLEARSTORERESPONSE']._serialized_start=310
+  _globals['_CLEARSTORERESPONSE']._serialized_end=345
+  _globals['_PUTOBJECTRESPONSE']._serialized_start=347
+  _globals['_PUTOBJECTRESPONSE']._serialized_end=394
+  _globals['_PUBLISH']._serialized_start=396
+  _globals['_PUBLISH']._serialized_end=418
+  _globals['_STORESERVICE']._serialized_start=421
+  _globals['_STORESERVICE']._serialized_end=830
 # @@protoc_insertion_point(module_scope)
