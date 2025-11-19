@@ -135,12 +135,14 @@ class AppendPyClass(_message.Message):
     def __init__(self, Name: _Optional[str] = ..., Methods: _Optional[_Iterable[_Union[AppendPyClass.ClassMethod, _Mapping]]] = ..., Venv: _Optional[str] = ..., Requirements: _Optional[_Iterable[str]] = ..., PickledObject: _Optional[bytes] = ..., Language: _Optional[_Union[_types_pb2.Language, str]] = ..., Resources: _Optional[_Union[Resources, _Mapping]] = ..., Replicas: _Optional[int] = ...) -> None: ...
 
 class AppendData(_message.Message):
-    __slots__ = ("SessionID", "Object")
+    __slots__ = ("SessionID", "InstanceID", "Object")
     SESSIONID_FIELD_NUMBER: _ClassVar[int]
+    INSTANCEID_FIELD_NUMBER: _ClassVar[int]
     OBJECT_FIELD_NUMBER: _ClassVar[int]
     SessionID: str
+    InstanceID: str
     Object: _types_pb2.EncodedObject
-    def __init__(self, SessionID: _Optional[str] = ..., Object: _Optional[_Union[_types_pb2.EncodedObject, _Mapping]] = ...) -> None: ...
+    def __init__(self, SessionID: _Optional[str] = ..., InstanceID: _Optional[str] = ..., Object: _Optional[_Union[_types_pb2.EncodedObject, _Mapping]] = ...) -> None: ...
 
 class AppendArg(_message.Message):
     __slots__ = ("SessionID", "InstanceID", "Name", "Param", "Value")
