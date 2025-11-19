@@ -47,8 +47,8 @@ class StreamChunk(_message.Message):
     VALUE_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
     ObjectID: str
-    Offset: str
+    Offset: int
     EoS: bool
     Value: EncodedObject
     Error: str
-    def __init__(self, ObjectID: _Optional[str] = ..., Offset: _Optional[str] = ..., EoS: bool = ..., Value: _Optional[_Union[EncodedObject, _Mapping]] = ..., Error: _Optional[str] = ...) -> None: ...
+    def __init__(self, ObjectID: _Optional[str] = ..., Offset: _Optional[int] = ..., EoS: bool = ..., Value: _Optional[_Union[EncodedObject, _Mapping]] = ..., Error: _Optional[str] = ...) -> None: ...

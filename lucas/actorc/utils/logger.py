@@ -1,4 +1,5 @@
 import logging
+import atexit
 from typing import Optional
 
 from protos.common import logger_pb2 as common_logger_pb2
@@ -19,9 +20,13 @@ _LEVEL_MAP = {
 }
 
 
+_SENTINEL = object()
+
+
 def setup_logging(logger: logging.Logger, application_id: str, logger_addr: str):
     handler = RemoteLogHandler(application_id, logger_addr)
     logger.addHandler(handler)
+    atexit.register(handler.close)
     return handler
 
 
@@ -32,6 +37,8 @@ class RemoteLogHandler(logging.Handler):
 
         self._logger_addr = logger_addr
         self._application_id = application_id
+        self._closed = False
+        self._stop_event = threading.Event()
 
         # 创建 gRPC 连接
         self._channel = grpc.insecure_channel(
@@ -45,21 +52,32 @@ class RemoteLogHandler(logging.Handler):
         self._thread.start()
 
     def _generate(self):
-        while True:
-            msg = self._q.get()
+        while not self._stop_event.is_set():
+            try:
+                msg = self._q.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if msg is _SENTINEL:
+                break
             yield msg
 
     def _run(self):
-        while True:
+        while not self._stop_event.is_set():
             try:
                 for response in self._response_stream:
+                    if self._stop_event.is_set():
+                        break
                     if not response.success and response.error:
                         print(f"Log service error: {response.error}")
             except Exception as e:
+                if self._stop_event.is_set():
+                    break
                 print(f"Stream error: {e}")
                 time.sleep(1)
 
     def emit(self, record: logging.LogRecord):
+        if self._closed:
+            return
         try:
             proto_level = _LEVEL_MAP.get(
                 record.levelno, common_logger_pb2.LOG_LEVEL_UNKNOWN)
@@ -69,7 +87,7 @@ class RemoteLogHandler(logging.Handler):
                 'name', 'msg', 'args', 'created', 'filename', 'funcName',
                 'levelname', 'levelno', 'lineno', 'module', 'msecs', 'message',
                 'pathname', 'process', 'processName', 'relativeCreated', 'thread',
-                'threadName', 'exc_info', 'exc_text', 'stack_info', 'getMessage'
+                'threadName', 'exc_info', 'exc_text', 'stack_info', 'getMessage', "asctime"
             }
             
             # 遍历 LogRecord 的所有属性，找出自定义字段
@@ -110,3 +128,26 @@ class RemoteLogHandler(logging.Handler):
             self._q.put(stream_msg)
         except Exception as e:
             print(f"Log emit error: {e}")
+
+    def flush(self):
+        deadline = time.time() + 2.0
+        while not self._q.empty() and time.time() < deadline:
+            time.sleep(0.05)
+
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self.flush()
+            self._stop_event.set()
+            self._q.put(_SENTINEL)
+            if self._thread.is_alive():
+                self._thread.join(timeout=2.0)
+            try:
+                self._response_stream.cancel()
+            except Exception:
+                pass
+            self._channel.close()
+        finally:
+            super().close()
