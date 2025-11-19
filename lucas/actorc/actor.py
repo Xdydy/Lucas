@@ -2,12 +2,12 @@ import os
 from typing import Any, Callable
 from utils.memory import parse_memory_string
 from utils.mapper import to_proto_append_dag_node_list
+from utils.logger import setup_logging
 from lucas import Runtime, Function, ActorClass, ActorInstance
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
 from lucas.workflow.dag import DAGNode, DataNode, ControlNode, ActorNode
 from lucas.utils.logging import log
-
 from protos.common import types_pb2 as common
 from protos.controller import controller_pb2, controller_pb2_grpc
 from utils import EncDec
@@ -33,6 +33,10 @@ class ActorContext:
                 master_address = os.getenv("MASTER_ADDR", "localhost:50051")
             if app_id is None:
                 app_id = os.getenv("APP_ID", None)
+            logger_addr = os.getenv("LOGGER_ADDR", None)
+            if logger_addr is not None:
+                log.info(f"setup logging to {logger_addr}")
+                setup_logging(log, app_id, logger_addr)
             actorContext = ActorContext(master_address, app_id)
         return actorContext
 
@@ -129,7 +133,7 @@ class ActorRuntime(Runtime):
         return _out
 
     def call(self, fnName: str, fnParams: dict) -> Future:
-        print(f"call {fnName}")
+        log.info(f"call {fnName}")
         sessionID = fnParams["sessionID"]
         instanceID = fnParams["instanceID"]
         name = fnParams["name"]
@@ -142,12 +146,12 @@ class ActorRuntime(Runtime):
             ),
         ))
         key = f"{sessionID}-{instanceID}-{name}"
-        print(f"find key: {key}")
+        log.info(f"find key: {key}")
         result = actorContext.get_result(key)
         return result
 
     def tell(self, fnName: str, fnParams: dict):
-        print("tell function here")
+        log.info("tell function here")
         fn = self._router.get(fnName)
         if fn is None:
             raise ValueError(f"Function {fnName} not found in router")
@@ -463,7 +467,7 @@ class ActorExecutor(Executor):
                                 )
                             actorContext.send(message)
                         else: # 本地调用函数
-                            print(data)
+                            log.info(f"Local function data: {data}")
                             if isinstance(data, controller_pb2.Data): # 需要获取实际值，不能传引用
                                 data = self._get_real_result(data)
                                 node.set_value(data)
