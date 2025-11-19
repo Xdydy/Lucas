@@ -1,5 +1,6 @@
 import logging
 import atexit
+import traceback
 from typing import Optional
 
 from protos.common import logger_pb2 as common_logger_pb2
@@ -89,7 +90,7 @@ class RemoteLogHandler(logging.Handler):
                 'pathname', 'process', 'processName', 'relativeCreated', 'thread',
                 'threadName', 'exc_info', 'exc_text', 'stack_info', 'getMessage', "asctime"
             }
-            
+
             # 遍历 LogRecord 的所有属性，找出自定义字段
             import json
             for key, value in record.__dict__.items():
@@ -99,10 +100,11 @@ class RemoteLogHandler(logging.Handler):
                 # 将自定义字段添加到 fields
                 field = common_logger_pb2.LogField(
                     key=key,
-                    value=json.dumps(value) if not isinstance(value, str) else value
+                    value=json.dumps(value) if not isinstance(
+                        value, str) else value
                 )
                 fields.append(field)
-            
+
             # 添加异常信息（如果有）
             if record.exc_info:
                 exc_text = self.formatException(record.exc_info)
@@ -151,3 +153,8 @@ class RemoteLogHandler(logging.Handler):
             self._channel.close()
         finally:
             super().close()
+
+    def formatException(self, exc_info):
+        if self.formatter:
+            return self.formatter.formatException(exc_info)
+        return "".join(traceback.format_exception(*exc_info))
