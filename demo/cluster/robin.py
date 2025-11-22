@@ -31,8 +31,7 @@ scheduler.analyze(dag)
 w_func = robin_workflow.export()
 import time
 start_t = time.time()
-for i in range(1000):
-    result = w_func()
+result = w_func()
 end_t = time.time()
 print(result)
 print(f"Execution time: {(end_t - start_t)} seconds")

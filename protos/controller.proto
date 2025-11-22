@@ -27,6 +27,7 @@ message Data {
         string ref = 2;
         bytes encoded = 3;
     }
+    int64 size = 4; // size in bytes
 }
 
 message Ack {

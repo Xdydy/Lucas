@@ -1,20 +1,14 @@
-from concurrent.futures import Future
-from threading import Lock
-count = 0
-lock = Lock()
+import cloudpickle
+import sys
+import pympler.asizeof as asizeof
+class ComplexObject:
+    def __init__(self, name):
+        self.name = name
+        self.data = list(range(1000))  # 大量数据
+        self.children = []
 
-def test_future_set_result():
-    future = Future()
-    future.set_result(42)
-    return future
+a = ComplexObject("root")
 
-def call_back(future):
-    global count
-    with lock:
-        count += 1
-
-
-for i in range(10):
-    result = test_future_set_result()
-    result.add_done_callback(call_back)
-print(count)
+print(asizeof.asizeof(cloudpickle.dumps(a)))
+print(sys.getsizeof(cloudpickle.dumps(a)))
+print(len(cloudpickle.dumps(a)))

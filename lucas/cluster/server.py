@@ -11,6 +11,7 @@ from argparse import ArgumentParser
 from queue import Queue
 from typing import Any, Callable, List
 from google.protobuf import empty_pb2
+from pympler.asizeof import asizeof
 
 class ControllerContext:
     def __init__(self, peer_address: str):
@@ -235,7 +236,8 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         self._store_service.PutObject(put_request, None)
         return controller_pb2.Data(
             type=controller_pb2.Data.ObjectType.OBJ_REF,
-            ref=obj_id
+            ref=obj_id,
+            size=asizeof(put_request.data)
         )
 
     def _append_function(self, append_fn_request: controller_pb2.AppendFunction) -> controller_pb2.Message:

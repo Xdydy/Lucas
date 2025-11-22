@@ -28,7 +28,7 @@ INVOKE_FUNCTION: MessageType
 RT_RESULT: MessageType
 
 class Data(_message.Message):
-    __slots__ = ("type", "ref", "encoded")
+    __slots__ = ("type", "ref", "encoded", "size")
     class ObjectType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
         __slots__ = ()
         OBJ_UNSPECIFIED: _ClassVar[Data.ObjectType]
@@ -42,10 +42,12 @@ class Data(_message.Message):
     TYPE_FIELD_NUMBER: _ClassVar[int]
     REF_FIELD_NUMBER: _ClassVar[int]
     ENCODED_FIELD_NUMBER: _ClassVar[int]
+    SIZE_FIELD_NUMBER: _ClassVar[int]
     type: Data.ObjectType
     ref: str
     encoded: bytes
-    def __init__(self, type: _Optional[_Union[Data.ObjectType, str]] = ..., ref: _Optional[str] = ..., encoded: _Optional[bytes] = ...) -> None: ...
+    size: int
+    def __init__(self, type: _Optional[_Union[Data.ObjectType, str]] = ..., ref: _Optional[str] = ..., encoded: _Optional[bytes] = ..., size: _Optional[int] = ...) -> None: ...
 
 class Ack(_message.Message):
     __slots__ = ("message", "error")
