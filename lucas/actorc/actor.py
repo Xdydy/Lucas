@@ -182,6 +182,12 @@ class ActorFunction(Function):
             replicas = self._config.replicas
         except AttributeError:
             replicas = 1
+        try:
+            tags = self._config.tags
+        except AttributeError:
+            tags = []
+        if tags is None:
+            tags = []
         sig = inspect.signature(fn)
         for name, param in sig.parameters.items():
             self._params.append(name)
@@ -199,6 +205,7 @@ class ActorFunction(Function):
                     Memory=parse_memory_string(memory),
                 ),
                 Replicas=replicas,
+                Tags=tags,
             ),
         )
         actorContext.send(message)

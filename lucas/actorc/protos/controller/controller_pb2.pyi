@@ -88,7 +88,7 @@ class Resources(_message.Message):
     def __init__(self, CPU: _Optional[int] = ..., Memory: _Optional[int] = ..., GPU: _Optional[int] = ...) -> None: ...
 
 class AppendPyFunc(_message.Message):
-    __slots__ = ("Name", "Params", "Venv", "Requirements", "PickledObject", "Language", "Resources", "Replicas")
+    __slots__ = ("Name", "Params", "Venv", "Requirements", "PickledObject", "Language", "Resources", "Replicas", "Tags")
     NAME_FIELD_NUMBER: _ClassVar[int]
     PARAMS_FIELD_NUMBER: _ClassVar[int]
     VENV_FIELD_NUMBER: _ClassVar[int]
@@ -97,6 +97,7 @@ class AppendPyFunc(_message.Message):
     LANGUAGE_FIELD_NUMBER: _ClassVar[int]
     RESOURCES_FIELD_NUMBER: _ClassVar[int]
     REPLICAS_FIELD_NUMBER: _ClassVar[int]
+    TAGS_FIELD_NUMBER: _ClassVar[int]
     Name: str
     Params: _containers.RepeatedScalarFieldContainer[str]
     Venv: str
@@ -105,7 +106,8 @@ class AppendPyFunc(_message.Message):
     Language: _types_pb2.Language
     Resources: Resources
     Replicas: int
-    def __init__(self, Name: _Optional[str] = ..., Params: _Optional[_Iterable[str]] = ..., Venv: _Optional[str] = ..., Requirements: _Optional[_Iterable[str]] = ..., PickledObject: _Optional[bytes] = ..., Language: _Optional[_Union[_types_pb2.Language, str]] = ..., Resources: _Optional[_Union[Resources, _Mapping]] = ..., Replicas: _Optional[int] = ...) -> None: ...
+    Tags: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, Name: _Optional[str] = ..., Params: _Optional[_Iterable[str]] = ..., Venv: _Optional[str] = ..., Requirements: _Optional[_Iterable[str]] = ..., PickledObject: _Optional[bytes] = ..., Language: _Optional[_Union[_types_pb2.Language, str]] = ..., Resources: _Optional[_Union[Resources, _Mapping]] = ..., Replicas: _Optional[int] = ..., Tags: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class AppendPyClass(_message.Message):
     __slots__ = ("Name", "Methods", "Venv", "Requirements", "PickledObject", "Language", "Resources", "Replicas")
