@@ -4,11 +4,15 @@ from lucas.utils.logging import log
 from lucas._private.classes import ActorInstance
 import threading
 import uuid
+import cloudpickle
 if TYPE_CHECKING:
     from .workflow import Workflow
 
 class DAGNode:
+    dag_no = 0
     def __init__(self) -> None:
+        self._no = DAGNode.dag_no
+        DAGNode.dag_no += 1
         self._id = str(uuid.uuid4())
         self._done = False
         self.belong_dag:"DAG" = None
@@ -16,10 +20,14 @@ class DAGNode:
         self._done = False
     def getid(self) -> str:
         return self._id
+    
+    def loads(self, metadata: dict) :
+        raise NotImplementedError()
     def metadata(self, fn_export=False) -> dict:
         return {
             'id': self._id,
             "done": self._done,
+            "no": self._no
         }
 
 class ControlNode(DAGNode):
@@ -41,19 +49,34 @@ class ControlNode(DAGNode):
             "data_node": None,
             'fn_name': name
         }
+    
+    @staticmethod
+    def loads(metadata: dict) -> "ControlNode":
+        fn = cloudpickle.loads(metadata['fn'])
+        node = ControlNode(fn, metadata['functionname'], metadata['functiontype'])
+        node._done = metadata['done']
+        node._id = metadata['id']
+        node._ld_to_key = {}
+        node._datas = {}
+        return node
+
+    def loads(self, metadata: dict) :
+        self._id = metadata['id']
+        self._done = metadata['done']
+        self._fn_name = metadata['functionname']
+        self._fn_type = metadata['functiontype']
+        self._datas = {key: cloudpickle.loads(bytes.fromhex(v)) for key, v in metadata['current'].items()}
+        return self
+
     def metadata(self, fn_export=False) -> dict:
         result = super().metadata()
         result['type'] = "ControlNode"
         result["functionname"] = self._fn_name
         result['params'] = {ld.getid(): r for ld, r in self._ld_to_key.items()}
-        result['current'] = len(self._datas)
+        result['current'] = {ld: cloudpickle.dumps(r).hex() for ld, r in self._datas.items() if ld in self._ld_to_key}
         result['data_node'] = self._data_node.getid()
         result['pre_data_nodes'] = [node.getid() for node in self._pre_data_nodes]
         result['functiontype'] = self._fn_type
-        # if fn_export:
-        #     import pickle
-        #     import base64
-        #     result['fn'] = base64.b64encode(pickle.dumps(self._fn)).decode()
         return result
 
     def add_pre_data_node(self, data_node: DAGNode):
@@ -135,10 +158,27 @@ class DataNode(DAGNode):
             'ready' : self._ready
         }
 
+    @staticmethod
+    def loads(metadata: dict) -> "DataNode":
+        ld = Lambda.loads({'id': metadata['lambda']['id'], 'value': metadata['lambda']['value']})
+        node = DataNode(ld)
+        node._done = metadata['done']
+        node._id = metadata['id']
+        node._ready = metadata['ready']
+        return node
+    
+    def loads(self, metadata: dict) :
+        self._id = metadata['id']
+        self._done = metadata['done']
+        self._ready = metadata['ready']
+        self._ld.loads(metadata['lambda'])
+        return self
+        
+
     def metadata(self,fn_export=False) -> dict:
         result = super().metadata()
         result['type'] = "DataNode"
-        result['lambda'] = self._ld.getid()
+        result['lambda'] = self._ld.dumps()
         result['ready'] = self._ready
         result['suf_control_nodes'] = [node.getid() for node in self._suf_control_nodes]
         result['pre_control_node'] = self._pre_control_node.getid() if self._pre_control_node else None
@@ -285,6 +325,15 @@ class DAG:
             if node._done == False:
                 return False
         return True
+
+    def loads(self, metadatas: dict) -> "DAG":
+        for metadata in metadatas:
+            for node in self.nodes:
+                if node._no == metadata['no']:
+                    node.loads(metadata)
+                    break
+        return self
+
     def run(self):
         while not self.hasDone():
             task = []
