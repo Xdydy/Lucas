@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import controller_pb2 as controller__pb2
+import controller_pb2 as ignis_dot_controller_dot_controller__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in controller_pb2_grpc.py depends on'
+        + ' but the generated code in ignis/controller/controller_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -35,9 +35,9 @@ class ServiceStub(object):
             channel: A grpc.Channel.
         """
         self.Session = channel.stream_stream(
-                '/controller.Service/Session',
-                request_serializer=controller__pb2.Message.SerializeToString,
-                response_deserializer=controller__pb2.Message.FromString,
+                '/ignis.controller.Service/Session',
+                request_serializer=ignis_dot_controller_dot_controller__pb2.Message.SerializeToString,
+                response_deserializer=ignis_dot_controller_dot_controller__pb2.Message.FromString,
                 _registered_method=True)
 
 
@@ -55,14 +55,14 @@ def add_ServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Session': grpc.stream_stream_rpc_method_handler(
                     servicer.Session,
-                    request_deserializer=controller__pb2.Message.FromString,
-                    response_serializer=controller__pb2.Message.SerializeToString,
+                    request_deserializer=ignis_dot_controller_dot_controller__pb2.Message.FromString,
+                    response_serializer=ignis_dot_controller_dot_controller__pb2.Message.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'controller.Service', rpc_method_handlers)
+            'ignis.controller.Service', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('controller.Service', rpc_method_handlers)
+    server.add_registered_method_handlers('ignis.controller.Service', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -83,9 +83,9 @@ class Service(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/controller.Service/Session',
-            controller__pb2.Message.SerializeToString,
-            controller__pb2.Message.FromString,
+            '/ignis.controller.Service/Session',
+            ignis_dot_controller_dot_controller__pb2.Message.SerializeToString,
+            ignis_dot_controller_dot_controller__pb2.Message.FromString,
             options,
             channel_credentials,
             insecure,

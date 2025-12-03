@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import logger_pb2 as logger__pb2
+import logger_pb2 as resource_dot_logger_dot_logger__pb2
 
 GRPC_GENERATED_VERSION = '1.76.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in logger_pb2_grpc.py depends on'
+        + ' but the generated code in resource/logger/logger_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -35,9 +35,9 @@ class LoggerServiceStub(object):
             channel: A grpc.Channel.
         """
         self.StreamLogs = channel.stream_stream(
-                '/logger.LoggerService/StreamLogs',
-                request_serializer=logger__pb2.LogStreamMessage.SerializeToString,
-                response_deserializer=logger__pb2.LogStreamResponse.FromString,
+                '/resource.logger.LoggerService/StreamLogs',
+                request_serializer=resource_dot_logger_dot_logger__pb2.LogStreamMessage.SerializeToString,
+                response_deserializer=resource_dot_logger_dot_logger__pb2.LogStreamResponse.FromString,
                 _registered_method=True)
 
 
@@ -55,14 +55,14 @@ def add_LoggerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'StreamLogs': grpc.stream_stream_rpc_method_handler(
                     servicer.StreamLogs,
-                    request_deserializer=logger__pb2.LogStreamMessage.FromString,
-                    response_serializer=logger__pb2.LogStreamResponse.SerializeToString,
+                    request_deserializer=resource_dot_logger_dot_logger__pb2.LogStreamMessage.FromString,
+                    response_serializer=resource_dot_logger_dot_logger__pb2.LogStreamResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'logger.LoggerService', rpc_method_handlers)
+            'resource.logger.LoggerService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('logger.LoggerService', rpc_method_handlers)
+    server.add_registered_method_handlers('resource.logger.LoggerService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -83,9 +83,9 @@ class LoggerService(object):
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/logger.LoggerService/StreamLogs',
-            logger__pb2.LogStreamMessage.SerializeToString,
-            logger__pb2.LogStreamResponse.FromString,
+            '/resource.logger.LoggerService/StreamLogs',
+            resource_dot_logger_dot_logger__pb2.LogStreamMessage.SerializeToString,
+            resource_dot_logger_dot_logger__pb2.LogStreamResponse.FromString,
             options,
             channel_credentials,
             insecure,
