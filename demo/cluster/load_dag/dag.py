@@ -5,17 +5,6 @@ from lucas import function, workflow, Workflow
 from lucas.cluster.client import Context, ClusterExecutor
 from lucas.cluster.scheduler import RobinScheduler
 
-@function
-def funca(a,b,c):
-    return a+b+c
-
-@function
-def funcb(a,b,c):
-    return a*b*c
-
-@function
-def add(a,b):
-    return a+b
 
 @workflow(executor = ClusterExecutor)
 def robin_workflow(wf: Workflow):

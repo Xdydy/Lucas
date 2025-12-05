@@ -219,3 +219,78 @@ class PathScheduler(Scheduler):
                     worker_id=apply_worker_id
                 )
             )
+        
+class KeyPathScheduler(Scheduler):
+    class Path:
+        def __init__(self):
+            self._nodes: list[DAGNode] = []
+            self._apply_to_worker = None
+            self._crush_node = None
+        def set_crush_node(self, node):
+            self._crush_node = node
+        def get(self):
+            return self._nodes
+        def add(self, node):
+            self._nodes.append(node)
+        def get_last_node(self):
+            return self._nodes[-1]
+        def set_apply_to_worker(self, worker_id):
+            self._apply_to_worker = worker_id
+        def get_apply_to_worker(self):
+            return self._apply_to_worker
+    def __init__(self, master_addr: str = "localhost:50051"):
+        super().__init__(master_addr)
+        self._node_to_worker = {}
+        self._in_dags = {}
+        self._paths: list[KeyPathScheduler.Path] = []
+        self._zero_nodes = []
+        self._visited: dict[DAGNode, KeyPathScheduler.Path] = {}
+    def analyze(self, dag: DAG):
+        nodes = dag.get_nodes()
+        self._in_dags = {}
+        for node in nodes:
+            self._in_dags[node] = 0
+        for node in nodes:
+            if isinstance(node, DataNode):
+                for ctl_node in node.get_succ_control_nodes():
+                    self._in_dags[ctl_node] += 1
+            elif isinstance(node, ControlNode):
+                self._in_dags[node.get_data_node()] += 1
+
+        self._zero_nodes = [node for node, in_degree in self._in_dags.items() if in_degree == 0]
+        self._paths = []
+        while len(self._zero_nodes) > 0:
+            node = self._zero_nodes.pop()
+            if isinstance(node, DataNode):
+                path = None
+                if node.get_pre_control_node() is not None:
+                    pre_ctl_node = node.get_pre_control_node()
+                    path = self._visited[pre_ctl_node]
+                    path.add(node)
+                else:
+                    path = self.Path()
+                    self._paths.append(path)
+                    path.add(node)
+                self._visited[node] = path
+                for ctl_node in node.get_succ_control_nodes():
+                    self._in_dags[ctl_node] -= 1
+                    if self._in_dags[ctl_node] == 0:
+                        self._zero_nodes.append(ctl_node)
+                    else:
+                        path.set_crush_node(ctl_node)
+            elif isinstance(node, ControlNode):
+                if len(node.get_pre_data_nodes()) > 0:
+                    pre_data_node = node.get_pre_data_nodes()[0]
+                    path = self._visited[pre_data_node]
+                    path.add(node)
+                else:
+                    path = self.Path()
+                    self._paths.append(path)
+                    path.add(node)
+                self._visited[node] = path
+                data_node = node.get_data_node()
+                self._in_dags[data_node] -= 1
+                if self._in_dags[data_node] == 0:
+                    self._zero_nodes.append(data_node)
+    def schedule(self, msg):
+        return super().schedule(msg)
