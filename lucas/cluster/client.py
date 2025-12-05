@@ -35,7 +35,7 @@ class Context:
         self._resp_stream = self._stub.PlatformSession(self._message_generator())
         self._resp_thread = threading.Thread(target=self._handle_responses, daemon=True)
         self._resp_thread.start()
-        self._scheduler: Scheduler | None = None
+        self._scheduler: Scheduler = None
     
     def set_scheduler(self, scheduler: Scheduler):
         if self._scheduler is not None:
@@ -106,6 +106,10 @@ class Context:
             )
         else:
             return self._scheduler.schedule(msg)
+        
+    def feedback(self, result: controller_pb2.ReturnResult):
+        if self._scheduler is not None:
+            self._scheduler.feedback(result)
 
     def send(self, msg: controller_pb2.Message):
         platform_msg = self.schedule(msg)
@@ -326,6 +330,8 @@ class ClusterExecutor(Executor):
                     def set_datanode_ready(fut: Future, c_node: ControlNode, d_node: DataNode):
                         nonlocal task_lock, tasks
                         res = fut.result()
+                        if isinstance(res, controller_pb2.Message) and res.type == controller_pb2.MessageType.RT_RESULT:
+                            context.feedback(res.return_result)
                         d_node.set_value(res)
                         d_node.set_ready()
                         log.info(f"{c_node.describe()} calculate {d_node.describe()}")
