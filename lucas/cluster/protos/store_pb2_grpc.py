@@ -60,10 +60,10 @@ class StoreServiceStub(object):
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=store__pb2.Publish.FromString,
                 _registered_method=True)
-        self.Subscribe = channel.unary_stream(
-                '/store.StoreService/Subscribe',
+        self.SubscribeSession = channel.unary_stream(
+                '/store.StoreService/SubscribeSession',
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-                response_deserializer=store__pb2.Publish.FromString,
+                response_deserializer=store__pb2.Subscribe.FromString,
                 _registered_method=True)
 
 
@@ -104,7 +104,7 @@ class StoreServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def Subscribe(self, request, context):
+    def SubscribeSession(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -138,10 +138,10 @@ def add_StoreServiceServicer_to_server(servicer, server):
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                     response_serializer=store__pb2.Publish.SerializeToString,
             ),
-            'Subscribe': grpc.unary_stream_rpc_method_handler(
-                    servicer.Subscribe,
+            'SubscribeSession': grpc.unary_stream_rpc_method_handler(
+                    servicer.SubscribeSession,
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
-                    response_serializer=store__pb2.Publish.SerializeToString,
+                    response_serializer=store__pb2.Subscribe.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -290,7 +290,7 @@ class StoreService(object):
             _registered_method=True)
 
     @staticmethod
-    def Subscribe(request,
+    def SubscribeSession(request,
             target,
             options=(),
             channel_credentials=None,
@@ -303,9 +303,9 @@ class StoreService(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/store.StoreService/Subscribe',
+            '/store.StoreService/SubscribeSession',
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-            store__pb2.Publish.FromString,
+            store__pb2.Subscribe.FromString,
             options,
             channel_credentials,
             insecure,

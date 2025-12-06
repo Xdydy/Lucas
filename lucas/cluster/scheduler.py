@@ -279,9 +279,9 @@ class KeyPathScheduler(Scheduler):
                     else:
                         # 冲突节点，设置断点
                         path.set_crush_node(node)
-                        if node._id not in self._crush_paths:
-                            self._crush_paths[node._id] = []
-                        self._crush_paths[node._id].append(path)
+                        if ctl_node._id not in self._crush_paths:
+                            self._crush_paths[ctl_node._id] = []
+                        self._crush_paths[ctl_node._id].append(path)
             elif isinstance(node, ControlNode):
                 if len(node.get_pre_data_nodes()) > 0:
                     pre_data_node = node.get_pre_data_nodes()[0]

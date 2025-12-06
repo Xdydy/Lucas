@@ -330,8 +330,13 @@ class ClusterExecutor(Executor):
                     def set_datanode_ready(fut: Future, c_node: ControlNode, d_node: DataNode):
                         nonlocal task_lock, tasks
                         res = fut.result()
-                        if isinstance(res, controller_pb2.Message) and res.type == controller_pb2.MessageType.RT_RESULT:
-                            context.feedback(res.return_result)
+                        if isinstance(res, controller_pb2.Data):
+                            context.feedback(controller_pb2.ReturnResult(
+                                session_id=session_id,
+                                instance_id=c_node._id,
+                                function_name=c_node.metadata()['functionname'],
+                                value=res
+                            ))
                         d_node.set_value(res)
                         d_node.set_ready()
                         log.info(f"{c_node.describe()} calculate {d_node.describe()}")

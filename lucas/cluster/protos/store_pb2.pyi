@@ -66,3 +66,11 @@ class Publish(_message.Message):
     REF_FIELD_NUMBER: _ClassVar[int]
     ref: str
     def __init__(self, ref: _Optional[str] = ...) -> None: ...
+
+class Subscribe(_message.Message):
+    __slots__ = ("ref", "subscriber_id")
+    REF_FIELD_NUMBER: _ClassVar[int]
+    SUBSCRIBER_ID_FIELD_NUMBER: _ClassVar[int]
+    ref: str
+    subscriber_id: str
+    def __init__(self, ref: _Optional[str] = ..., subscriber_id: _Optional[str] = ...) -> None: ...

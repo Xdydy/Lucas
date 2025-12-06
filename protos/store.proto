@@ -43,7 +43,12 @@ message PutObjectResponse {
 }
 
 message Publish {
-    string ref = 2;
+    string ref = 1;
+}
+
+message Subscribe {
+    string ref = 1;
+    string subscriber_id = 2;
 }
 
 
@@ -57,5 +62,5 @@ service StoreService {
     // Publish is a server-streaming RPC: client sends an empty request and the server
     // continuously streams `Publish` messages (worker_id + ref) to the client.
     rpc PublishSession(google.protobuf.Empty) returns (stream Publish) {}
-    rpc Subscribe(google.protobuf.Empty) returns (stream Publish) {}
+    rpc SubscribeSession(google.protobuf.Empty) returns (stream Subscribe) {}
 }
