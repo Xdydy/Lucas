@@ -225,6 +225,9 @@ class PathScheduler(Scheduler):
         
 class KeyPathScheduler(Scheduler):
     class Path:
+        """
+        Path 表示 DAG 上的可串行的关键路径，包含路径上的若干节点. 冲突节点表示多条路径的汇合点，需要根据传输的数据量来决定后续路径的调度策略。
+        """
         def __init__(self):
             self._nodes: list[DAGNode] = []
             self._apply_to_worker = None
@@ -298,6 +301,10 @@ class KeyPathScheduler(Scheduler):
                     _zero_nodes.append(data_node)
         
     def analyze(self, dag: DAG):
+        """
+        分析 DAG，构建关键路径，并为每条路径分配计算节点，在任务执行前调用预先分配部分计算节点
+        
+        """
         nodes = dag.get_nodes()
         self._in_dags = {}
         for node in nodes:
@@ -317,6 +324,9 @@ class KeyPathScheduler(Scheduler):
             worker_index = (worker_index + 1) % len(self._workers)
             
     def feedback(self, result: controller_pb2.ReturnResult):
+        """
+        反馈任务执行结果，更新关键路径的传输数据量信息
+        """
         node_id = result.instance_id
         path = self._visited[node_id]
         path.set_transmit_data_size(result.value.size)
@@ -341,6 +351,9 @@ class KeyPathScheduler(Scheduler):
         return min_path.get_apply_to_worker()
 
     def schedule(self, msg: controller_pb2.Message) -> platform_pb2.Message:
+        """
+        决策每个报文的调度策略
+        """
         if msg.type == controller_pb2.MessageType.APPEND_FUNCTION:
             return platform_pb2.Message(
                 type=platform_pb2.MessageType.BROADCAST,
