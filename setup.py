@@ -18,6 +18,9 @@ setup(
             "requests==2.26.0",
             'redis==5.2.1',
             'rocketmq-client-python==2.0.1rc1'
+        ],
+        "cluster": [
+            "pyyaml==1.1",
         ]
     },
     packages=find_packages(),

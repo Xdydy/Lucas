@@ -380,6 +380,7 @@ class Master(
             # map ref -> worker_id
             self._refs: dict[str, str] = {}
             self._refs_lock = threading.Lock()
+            self._refs_cond = threading.Condition(lock=self._refs_lock)
             self._new_worker = Queue()
         
             self._listener_threads: List[threading.Thread] = []
@@ -394,8 +395,17 @@ class Master(
             self._out_store = out_store
         
         def handle_subscribe(self, msg: store_pb2.Subscribe):
-            with self._refs_lock:
-                worker_id = self._refs[msg.ref]
+            log.info(f"Handling subscribe for ref: {msg.ref} from subscriber: {msg.subscriber_id}")
+            worker_id: str = None
+            while worker_id is None:
+                with self._refs_cond:
+                    if msg.ref in self._refs:
+                        worker_id = self._refs[msg.ref]
+                    if worker_id is not None:
+                        break
+                    log.info(f"Waiting for ref: {msg.ref} to be published")
+                    self._refs_cond.wait()
+                    log.info(f"Woke up for ref: {msg.ref}")
             put_request: store_pb2.PutObjectRequest = None
             if worker_id == "local":
                 data = self._out_store.get(msg.ref)
@@ -417,6 +427,14 @@ class Master(
                 stub = store_pb2_grpc.StoreServiceStub(channel)
                 stub.PutObject(put_request)
                 # self._out_store.put(msg.ref, cloudpickle.loads(resp.data))
+        
+        def handle_publish(self, ref: str, worker_id: str):
+            log.info(f"Handling publish for ref: {ref} from worker: {worker_id}")
+            with self._refs_cond:
+                self._refs[ref] = worker_id
+                log.info(f"Published ref: {ref} from worker: {worker_id}")
+                log.info(f"{self._refs}")
+                self._refs_cond.notify_all()
 
         def _spawn_local_session_reader(self):
             def gen():
@@ -431,10 +449,7 @@ class Master(
             def local_publish():
                 try:
                     for resp in self._out_store.PublishSession(gen(), None):
-                        if resp is None:
-                            break
-                        with self._refs_lock:
-                            self._refs[resp.ref] = "local"
+                        self.handle_publish(resp.ref, "local")
                 except Exception as e:
                     log.error(f"Error in local_publish: {e}")
             
@@ -454,8 +469,7 @@ class Master(
                     if publish_msg is None:
                         break
                     # Process the publish_msg as needed
-                    with self._refs_lock:
-                        self._refs[publish_msg.ref] = wid
+                    self.handle_publish(publish_msg.ref, wid)
             
             def subscriber_listener(wid, meta: Master.Metadata):
                 q = meta._store.get_subscribe_outgoing_queue()
@@ -486,11 +500,11 @@ class Master(
             self._listener_threads.append(monitor_thread)
 
         def exists(self, ref) -> bool:
-            with self._refs_lock:
+            with self._refs_cond:
                 return ref in self._refs
         
         def get_worker_id(self, ref) -> str | None:
-            with self._refs_lock:
+            with self._refs_cond:
                 return self._refs.get(ref, None)
             
         def add_worker(self, wid, meta: "Master.Metadata"):
@@ -501,7 +515,7 @@ class Master(
                 channel = grpc.insecure_channel(f"{meta._host}:{meta._port}")
                 stub = store_pb2_grpc.StoreServiceStub(channel)
                 stub.ClearStore(request)
-            with self._refs_lock:
+            with self._refs_cond:
                 if request.prefix:
                     keys_to_delete = [key for key in self._refs 
                     if key.startswith(request.prefix)]
