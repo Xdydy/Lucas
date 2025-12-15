@@ -251,6 +251,26 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
             ref=obj_id,
             size=asizeof(put_request.data)
         )
+    
+    def _execute_function_impl(self, sanbox: ExecutorSandBox, session_id: str, instance_id: str, function_name: str) -> Any:
+        try:
+            result = sanbox.run()
+            result_data = self._transmit_result(result, session_id, instance_id, function_name)
+            log.info(f"Invoked function: {function_name}")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.RT_RESULT,
+                return_result=controller_pb2.ReturnResult(
+                    value=result_data
+                )
+            )
+        except Exception as e:
+            obj_id = f"{session_id}_{instance_id}_{function_name}"
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    error=f"{obj_id}:{e}"
+                )
+            )
 
     def _append_function(self, append_fn_request: controller_pb2.AppendFunction) -> controller_pb2.Message:
         function_name = append_fn_request.function_name
@@ -286,6 +306,7 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         sandbox.apply_args({param_name: data})
         log.info(f"Appended args for function: {function_name}, instance: {instance_id}")
         if sandbox.can_run():
+            return self._execute_function_impl(sandbox, session_id, instance_id, function_name)
             log.info(f"Function {function_name} is ready to run.")
             result = sandbox.run()
             result_data = self._transmit_result(result, session_id, instance_id, function_name)
@@ -319,6 +340,7 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         sandbox = executor.create_instance(f"{invoke_fn_request.session_id}_{instance_id}")
         sandbox.set_run()
         if sandbox.can_run():
+            return self._execute_function_impl(sandbox, invoke_fn_request.session_id, instance_id, function_name)
             result = sandbox.run()
             result_data = self._transmit_result(result, invoke_fn_request.session_id, instance_id, function_name)
             log.info(f"Invoked function: {function_name}")
@@ -716,6 +738,7 @@ class Master(
                     else:
                         log.error(f"Unknown message type received: {request.type}")
             except grpc.RpcError as e:
+                outgoing_q.put((None, None))
                 log.info("Session request stream closed by client")
             except Exception:
                 log.exception("Error reading session requests")
@@ -746,6 +769,7 @@ class Master(
                 except Exception:
                     log.exception("Error converting controller message to cluster message")
         finally:
+            log.info("Shutting down PlatformSession")
             stop_event.set()
             # attempt to join threads briefly
             req_thread.join()

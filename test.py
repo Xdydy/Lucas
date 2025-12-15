@@ -1,14 +1,21 @@
-import cloudpickle
-import sys
-import pympler.asizeof as asizeof
-class ComplexObject:
-    def __init__(self, name):
-        self.name = name
-        self.data = list(range(1000))  # 大量数据
-        self.children = []
+from concurrent.futures import Future
 
-a = ComplexObject("root")
+def func():
+    # return 3
+    raise ValueError("An error occurred")
 
-print(asizeof.asizeof(cloudpickle.dumps(a)))
-print(sys.getsizeof(cloudpickle.dumps(a)))
-print(len(cloudpickle.dumps(a)))
+def get_future() -> Future:
+    f = Future()
+    try:
+        result = func()
+        f.set_result(result)
+    except Exception as e:
+        f.set_exception(e)
+    return f
+
+f = get_future()
+try:
+    result = f.result()  # This will raise the ValueError with the message "An error occurred"
+    print(f"Function result: {result}")
+except Exception as e:
+    print(f"Caught exception from future: {e}")

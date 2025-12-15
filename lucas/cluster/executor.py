@@ -20,6 +20,8 @@ class ExecutorSandBox:
             result = self._execute_obj(**self._args)
         except TypeError as e:
             raise RuntimeError(f"Failed to execute function: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Error during function execution: {e}")
         return result
 
 class FunctionExecutor:

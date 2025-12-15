@@ -73,7 +73,7 @@ class ControlNode(DAGNode):
         result['type'] = "ControlNode"
         result["functionname"] = self._fn_name
         result['params'] = {ld.getid(): r for ld, r in self._ld_to_key.items()}
-        result['current'] = {ld: cloudpickle.dumps(r).hex() for ld, r in self._datas.items() if ld in self._ld_to_key}
+        result['current'] = {ld: cloudpickle.dumps(r).hex() for ld, r in self._datas.items()}
         result['data_node'] = self._data_node.getid()
         result['pre_data_nodes'] = [node.getid() for node in self._pre_data_nodes]
         result['functiontype'] = self._fn_type
@@ -102,6 +102,9 @@ class ControlNode(DAGNode):
             return True
         else:
             return False
+    
+    def can_run(self) -> bool:
+        return len(self._datas) >= len(self._ld_to_key)
 
     def calculate(self):
         res = self._fn(self._datas)

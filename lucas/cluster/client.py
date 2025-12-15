@@ -16,6 +16,7 @@ import uuid
 import time
 import inspect
 import threading
+import os
 
 class Context:
     context: "Context | None" = None
@@ -68,6 +69,19 @@ class Context:
                     f = Future()
                     f.set_result(rt_result.value)
                     self._result[obj_id] = f
+    
+    def _handle_controller_error(self, error: str):
+        # Handle error accordingly
+        obj_id = error.split(":")[0]
+        message = error.split(":")[1]
+        log.error(f"Received controller error: {message}")
+        with self._result_lock:
+            if obj_id in self._result:
+                self._result[obj_id].set_result(RuntimeError(message))
+            else:
+                f = Future()
+                f.set_result(RuntimeError(message))
+                self._result[obj_id] = f
 
 
     def _handle_controller_response(self, controller_message: controller_pb2.Message):
@@ -86,6 +100,7 @@ class Context:
         # log.info(f"Received ACK: {ack.message}")
         if ack.error != "":
             log.error(f"Error in ACK: {ack.error}")
+            self._handle_controller_error(ack.error)
 
     def wait_for_result(self, obj_id: str) -> Future:
         with self._result_lock:
@@ -265,7 +280,12 @@ class ClusterExecutor(Executor):
         return result
     
     def execute(self):
-        session_id = str(uuid.uuid4())
+        session_id = None
+        if os.path.exists('session'):
+            with open('session', 'r') as f:
+                session_id = f.read().strip()
+        if session_id is None:
+            session_id = str(uuid.uuid4())
         context = Context.create_context()
         task_lock = threading.Lock()
         tasks : list[DAGNode] = []
@@ -277,7 +297,7 @@ class ClusterExecutor(Executor):
                     with task_lock:
                         tasks.append(node)
             elif isinstance(node, ControlNode):
-                if len(node.get_pre_data_nodes()) == 0:
+                if len(node.get_pre_data_nodes()) == 0 or node.can_run():
                     with task_lock:
                         tasks.append(node)
         
@@ -291,6 +311,10 @@ class ClusterExecutor(Executor):
             node._done = True
             if isinstance(node, DataNode):
                 data = node._ld.value
+                if isinstance(data, RuntimeError):
+                    log.error(f"Error in data node {node.describe()}: {data}")
+                    node._done = False
+                    continue
                 for control_node in node.get_succ_control_nodes():
                     control_node: ControlNode
                     control_node_metadata = control_node.metadata()
@@ -330,7 +354,10 @@ class ClusterExecutor(Executor):
                     def set_datanode_ready(fut: Future, c_node: ControlNode, d_node: DataNode):
                         nonlocal task_lock, tasks
                         res = fut.result()
-                        if isinstance(res, controller_pb2.Data):
+                        if isinstance(res, RuntimeError):
+                            log.error(f"Error executing {c_node.describe()}")
+                            c_node._done = False
+                        elif isinstance(res, controller_pb2.Data):
                             context.feedback(controller_pb2.ReturnResult(
                                 session_id=session_id,
                                 instance_id=c_node._id,
@@ -351,6 +378,13 @@ class ClusterExecutor(Executor):
                     if r_node.is_ready():
                         with task_lock:
                             tasks.append(r_node)
+        if not self.dag.hasDone():
+            import json
+            with open('dag.json', 'w') as f:
+                f.write(json.dumps(self.dag.metadata(), indent=2))
+            with open('session', 'w') as f:
+                f.write(session_id)
+            raise RuntimeError("Some tasks failed during execution.")
         result = self._return_result()
         self.dag.reset()
         return result

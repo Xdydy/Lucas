@@ -1,0 +1,211 @@
+[
+  {
+    "id": "471ca811-0c33-46aa-88c8-edb455c9455f",
+    "done": true,
+    "no": 0,
+    "type": "ControlNode",
+    "functionname": "funca",
+    "params": {
+      "0d3f2b88-19f0-4252-8f04-cf0c6b8c94a9": "a",
+      "5a143b3b-e02b-46e6-a2b0-74bc93f0e532": "b",
+      "01f48747-4b6a-4423-bc4d-58904dd20656": "c"
+    },
+    "current": {},
+    "data_node": "acffcffb-fa7c-4a08-917a-7ba1970cda1e",
+    "pre_data_nodes": [
+      "01c08e79-54a6-42ef-8801-a82611a9eab2",
+      "11884dab-a307-4b9b-8237-e8b9eacfb1b8",
+      "85c9175e-c3c1-43e3-955a-5093e6d1291f"
+    ],
+    "functiontype": "remote"
+  },
+  {
+    "id": "01c08e79-54a6-42ef-8801-a82611a9eab2",
+    "done": true,
+    "no": 1,
+    "type": "DataNode",
+    "lambda": {
+      "id": "0d3f2b88-19f0-4252-8f04-cf0c6b8c94a9",
+      "value": "80054b012e"
+    },
+    "ready": true,
+    "suf_control_nodes": [
+      "471ca811-0c33-46aa-88c8-edb455c9455f"
+    ],
+    "pre_control_node": null,
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "11884dab-a307-4b9b-8237-e8b9eacfb1b8",
+    "done": true,
+    "no": 2,
+    "type": "DataNode",
+    "lambda": {
+      "id": "5a143b3b-e02b-46e6-a2b0-74bc93f0e532",
+      "value": "80054b022e"
+    },
+    "ready": true,
+    "suf_control_nodes": [
+      "471ca811-0c33-46aa-88c8-edb455c9455f"
+    ],
+    "pre_control_node": null,
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "85c9175e-c3c1-43e3-955a-5093e6d1291f",
+    "done": true,
+    "no": 3,
+    "type": "DataNode",
+    "lambda": {
+      "id": "01f48747-4b6a-4423-bc4d-58904dd20656",
+      "value": "80054b032e"
+    },
+    "ready": true,
+    "suf_control_nodes": [
+      "471ca811-0c33-46aa-88c8-edb455c9455f"
+    ],
+    "pre_control_node": null,
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "acffcffb-fa7c-4a08-917a-7ba1970cda1e",
+    "done": true,
+    "no": 4,
+    "type": "DataNode",
+    "lambda": {
+      "id": "8a2177b0-683d-4a41-a477-3ba1ce7bebc6",
+      "value": "80059587000000000000008c0e636f6e74726f6c6c65725f706232948c04446174619493942952947d948c0a73657269616c697a65649443550801124f36303663376230652d353032362d346638322d623237392d3239376235363438623062355f34373163613831312d306333332d343661612d383863382d6564623435356339343535665f66756e636120289473622e"
+    },
+    "ready": true,
+    "suf_control_nodes": [
+      "b3b75d5a-b750-43c6-82b7-53ee8e22dd95"
+    ],
+    "pre_control_node": "471ca811-0c33-46aa-88c8-edb455c9455f",
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "c6d5b1a1-1019-4df2-a5ec-85ec49e15f48",
+    "done": false,
+    "no": 5,
+    "type": "ControlNode",
+    "functionname": "funcb",
+    "params": {
+      "352ba5fd-880d-4e8e-84cc-711b95a25f27": "a",
+      "cb976bfb-5dfd-4277-8748-7972a3eae4f3": "b",
+      "d4d080b8-514f-4e91-89dd-cb6bbc8d950c": "c"
+    },
+    "current": {},
+    "data_node": "95e35b3b-a216-4ca8-aa4c-6979df16a575",
+    "pre_data_nodes": [
+      "3787359f-08e4-4807-b95d-7b61080f7f0a",
+      "54480143-7d4f-4918-bdd6-15163f2ebbf6",
+      "03587a67-3647-4e86-9919-141c6e9feb4f"
+    ],
+    "functiontype": "remote"
+  },
+  {
+    "id": "3787359f-08e4-4807-b95d-7b61080f7f0a",
+    "done": true,
+    "no": 6,
+    "type": "DataNode",
+    "lambda": {
+      "id": "352ba5fd-880d-4e8e-84cc-711b95a25f27",
+      "value": "80054b012e"
+    },
+    "ready": true,
+    "suf_control_nodes": [
+      "c6d5b1a1-1019-4df2-a5ec-85ec49e15f48"
+    ],
+    "pre_control_node": null,
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "54480143-7d4f-4918-bdd6-15163f2ebbf6",
+    "done": true,
+    "no": 7,
+    "type": "DataNode",
+    "lambda": {
+      "id": "cb976bfb-5dfd-4277-8748-7972a3eae4f3",
+      "value": "80054b022e"
+    },
+    "ready": true,
+    "suf_control_nodes": [
+      "c6d5b1a1-1019-4df2-a5ec-85ec49e15f48"
+    ],
+    "pre_control_node": null,
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "03587a67-3647-4e86-9919-141c6e9feb4f",
+    "done": true,
+    "no": 8,
+    "type": "DataNode",
+    "lambda": {
+      "id": "d4d080b8-514f-4e91-89dd-cb6bbc8d950c",
+      "value": "80054b032e"
+    },
+    "ready": true,
+    "suf_control_nodes": [
+      "c6d5b1a1-1019-4df2-a5ec-85ec49e15f48"
+    ],
+    "pre_control_node": null,
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "95e35b3b-a216-4ca8-aa4c-6979df16a575",
+    "done": false,
+    "no": 9,
+    "type": "DataNode",
+    "lambda": {
+      "id": "e0267322-4c02-4dba-bd6c-9df6e3006ba4",
+      "value": "80054e2e"
+    },
+    "ready": false,
+    "suf_control_nodes": [
+      "b3b75d5a-b750-43c6-82b7-53ee8e22dd95"
+    ],
+    "pre_control_node": "c6d5b1a1-1019-4df2-a5ec-85ec49e15f48",
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "b3b75d5a-b750-43c6-82b7-53ee8e22dd95",
+    "done": false,
+    "no": 10,
+    "type": "ControlNode",
+    "functionname": "add",
+    "params": {
+      "8a2177b0-683d-4a41-a477-3ba1ce7bebc6": "a",
+      "e0267322-4c02-4dba-bd6c-9df6e3006ba4": "b"
+    },
+    "current": {},
+    "data_node": "562fd87d-60da-426b-bf9e-54790b6e5bb0",
+    "pre_data_nodes": [
+      "acffcffb-fa7c-4a08-917a-7ba1970cda1e",
+      "95e35b3b-a216-4ca8-aa4c-6979df16a575"
+    ],
+    "functiontype": "remote"
+  },
+  {
+    "id": "562fd87d-60da-426b-bf9e-54790b6e5bb0",
+    "done": false,
+    "no": 11,
+    "type": "DataNode",
+    "lambda": {
+      "id": "7a71f468-849c-4b17-b5c9-9291cc3aeb6b",
+      "value": "80054e2e"
+    },
+    "ready": false,
+    "suf_control_nodes": [],
+    "pre_control_node": "b3b75d5a-b750-43c6-82b7-53ee8e22dd95",
+    "parent_node": null,
+    "child_node": []
+  }
+]
