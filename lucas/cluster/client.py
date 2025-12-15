@@ -38,8 +38,8 @@ class Context:
         self._scheduler: Scheduler = None
     
     def set_scheduler(self, scheduler: Scheduler):
-        if self._scheduler is not None:
-            self._scheduler.shutdown()
+        # if self._scheduler is not None:
+        #     self._scheduler.shutdown()
         self._scheduler = scheduler
     
     def _message_generator(self):

@@ -749,7 +749,7 @@ class Master(
             stop_event.set()
             # attempt to join threads briefly
             req_thread.join()
-            self.ClearStore(store_pb2.ClearStoreRequest(), None)
+            # self.ClearStore(store_pb2.ClearStoreRequest(), None)
 
     def AddWorkerCommand(self, request, context):
         return self.addWorker(request)

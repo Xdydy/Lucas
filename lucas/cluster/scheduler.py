@@ -95,6 +95,7 @@ class RobinScheduler(Scheduler):
             arg = msg.append_function_arg
             func_id = arg.instance_id
             apply_worker_id = self._node_to_worker[func_id]
+            log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
             return platform_pb2.Message(
                 type=platform_pb2.MessageType.APPLY_TO_WORKER,
                 apply_to_worker=platform_pb2.ApplyToWorker(
@@ -106,6 +107,7 @@ class RobinScheduler(Scheduler):
             invoke_func = msg.invoke_function
             func_id = invoke_func.instance_id
             apply_worker_id = self._node_to_worker[func_id]
+            log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
             return platform_pb2.Message(
                 type=platform_pb2.MessageType.APPLY_TO_WORKER,
                 apply_to_worker=platform_pb2.ApplyToWorker(
@@ -366,6 +368,7 @@ class KeyPathScheduler(Scheduler):
             func_id = arg.instance_id
             if self._visited.get(func_id) is not None:
                 apply_worker_id = self._visited[func_id].get_apply_to_worker()
+                log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
                 return platform_pb2.Message(
                     type=platform_pb2.MessageType.APPLY_TO_WORKER,
                     apply_to_worker=platform_pb2.ApplyToWorker(
@@ -376,6 +379,7 @@ class KeyPathScheduler(Scheduler):
             else:
                 apply_worker_id = self._find_best_worker(func_id)
                 self._topo()
+                log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
                 return platform_pb2.Message(
                     type=platform_pb2.MessageType.APPLY_TO_WORKER,
                     apply_to_worker=platform_pb2.ApplyToWorker(
@@ -387,6 +391,7 @@ class KeyPathScheduler(Scheduler):
             invoke_func = msg.invoke_function
             func_id = invoke_func.instance_id
             apply_worker_id = self._visited[func_id].get_apply_to_worker()
+            log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
             return platform_pb2.Message(
                 type=platform_pb2.MessageType.APPLY_TO_WORKER,
                 apply_to_worker=platform_pb2.ApplyToWorker(
