@@ -436,7 +436,7 @@ class ActorExecutor(Executor):
             _end = False
             while len(task) != 0 or self._has_pending_tasks():
                 if len(task) == 0:
-                    done, _futures = wait(_futures, return_when='FIRST_COMPLETED')
+                    done, _ = wait(self._pending_tasks, return_when='FIRST_COMPLETED')
                     # _futures = [fut for fut in _futures if not fut.done()]
                     for future in done:
                         self._pending_callback(future)
