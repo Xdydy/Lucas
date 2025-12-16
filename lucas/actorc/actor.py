@@ -523,7 +523,7 @@ class ActorExecutor(Executor):
                             log.info(f"{c_node.describe()} calculate {d_node.describe()}")
                             if d_node.is_ready():
                                 with _task_lock:
-                                    task.append(r_node)
+                                    task.append(d_node)
                         self._append_pending(result, c_node=node, d_node=r_node, callback=set_datanode_ready)
                     else:
                         r_node.set_value(result)
