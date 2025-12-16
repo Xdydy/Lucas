@@ -1,5 +1,5 @@
 import os
-from typing import Any, Callable
+from typing import Any, Callable, Tuple
 from utils.memory import parse_memory_string
 from utils.mapper import to_proto_append_dag_node_list
 from utils.logger import setup_logging
@@ -373,6 +373,25 @@ class ActorRuntimeClass(ActorClass):
 class ActorExecutor(Executor):
     def __init__(self, dag):
         super().__init__(dag)
+        self._pending_tasks : list[Future] = []
+        self._map_future_callback: dict[Future, Callable[[Future], Any]] = {}
+        self._map_future_params: dict[Future, Tuple[Future]] = {}
+
+    def _has_pending_tasks(self):
+        return len(self._pending_tasks) > 0
+    
+    def _pending_callback(self, fut: Future):
+        self._pending_tasks.remove(fut)
+        if fut in self._map_future_callback:
+            callback = self._map_future_callback[fut]
+            params = self._map_future_params[fut]
+            callback(*params)
+            del self._map_future_callback[fut]
+            del self._map_future_params[fut]
+    def _append_pending(self, fut: Future, c_node: ControlNode, d_node: DataNode, callback: Callable[[Future], Any]):
+        self._pending_tasks.append(fut)
+        self._map_future_callback[fut] = callback
+        self._map_future_params[fut] = (fut, c_node, d_node)
 
     def _get_real_result(self, data: controller_pb2.Data):
         message = controller_pb2.Message(
@@ -415,16 +434,12 @@ class ActorExecutor(Executor):
                             task.append(node)
 
             _end = False
-            _futures: set[Future] = set()
-            _map_future_handler: dict[Future, Callable[[Future], Any]] = {}
-            while len(task) != 0 or len(_futures) != 0:
+            while len(task) != 0 or self._has_pending_tasks():
                 if len(task) == 0:
                     done, _futures = wait(_futures, return_when='FIRST_COMPLETED')
                     # _futures = [fut for fut in _futures if not fut.done()]
                     for future in done:
-                        handler = _map_future_handler[future]
-                        handler(future)
-                        del _map_future_handler[future]
+                        self._pending_callback(future)
                     continue
                 with _task_lock:
                     node = task.pop(0)
@@ -501,16 +516,15 @@ class ActorExecutor(Executor):
                     r_node: DataNode = node.get_data_node()
                     result = fn(params)
                     if isinstance(result, Future):
-                        def set_datanode_ready(future: Future):
-                            nonlocal node, _task_lock, task
-                            r_node.set_value(future.result())
-                            r_node.set_ready()
-                            log.info(f"{node.describe()} calculate {r_node.describe()}")
-                            if r_node.is_ready():
+                        def set_datanode_ready(future: Future, c_node: ControlNode, d_node: DataNode):
+                            nonlocal _task_lock, task
+                            d_node.set_value(future.result())
+                            d_node.set_ready()
+                            log.info(f"{c_node.describe()} calculate {d_node.describe()}")
+                            if d_node.is_ready():
                                 with _task_lock:
                                     task.append(r_node)
-                        _map_future_handler[result] = set_datanode_ready
-                        _futures.add(result)
+                        self._append_pending(result, c_node=node, d_node=r_node, callback=set_datanode_ready)
                     else:
                         r_node.set_value(result)
                         r_node.set_ready()
