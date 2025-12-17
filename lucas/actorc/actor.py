@@ -22,20 +22,18 @@ import time
 import inspect
 import threading
 
-actorContext: "ActorContext | None" = None
-
 
 class ActorContext:
+    actorContext: "ActorContext | None" = None
     @staticmethod
     def createContext(master_address: str = None, app_id: str = None):
-        global actorContext
-        if actorContext is None:
+        if ActorContext.actorContext is None:
             if master_address is None:
                 master_address = os.getenv("MASTER_ADDR", "localhost:50051")
             if app_id is None:
                 app_id = os.getenv("APP_ID", None)
-            actorContext = ActorContext(master_address, app_id)
-        return actorContext
+            ActorContext.actorContext = ActorContext(master_address, app_id)
+        return ActorContext.actorContext
 
     def __init__(self, master_address: str = None, app_id: str = None):
         if master_address is None:
@@ -186,6 +184,7 @@ class ActorRuntime(Runtime):
         sessionID = fnParams["sessionID"]
         instanceID = fnParams["instanceID"]
         name = fnParams["name"]
+        actorContext = ActorContext.createContext()
         actorContext.send(controller_pb2.Message(
             Type=controller_pb2.CommandType.FR_INVOKE,
             Invoke=controller_pb2.Invoke(
@@ -214,6 +213,7 @@ class ActorFunction(Function):
         self._instance_id = str(uuid.uuid4())
         super().__init__(fn, config)
     def onFunctionInit(self, fn):
+        actorContext = ActorContext.createContext()
         dependcy = self._config.dependency
         fn_name = self._config.name
         venv = self._config.venv
@@ -254,6 +254,7 @@ class ActorFunction(Function):
 
     def _transformfunction(self, fn):
         def actor_function(args: dict):
+            actorContext = ActorContext.createContext()
             sessionID = str(uuid.uuid4())
             for key, value in args.items():
                 if isinstance(value, controller_pb2.Data):
@@ -302,6 +303,7 @@ class ActorRuntimeInstance(ActorInstance):
     def __init__(self, instance):
         super().__init__(instance)
     def remote(self, method_name, data:dict):
+        actorContext = ActorContext.createContext()
         if not hasattr(self._instance, method_name):
             raise AttributeError(f"Object {self._instance} has no method {method_name}")
         method = getattr(self._instance, method_name)
@@ -370,6 +372,7 @@ class ActorRuntimeClass(ActorClass):
         return methods
 
     def onClassInit(self, instance):
+        actorContext = ActorContext.createContext()
         dependcy = self._config.dependency
         class_name = self._config.name
         instance.__class__.__name__ = class_name
@@ -417,12 +420,12 @@ class ActorExecutor(Executor):
         super().__init__(dag)
 
         # send DAG to controller
-        proto_dag = to_proto_dag(dag)
-        message = controller_pb2.Message(
-            Type=controller_pb2.CommandType.FR_DAG,
-            DAG=proto_dag,
-        )
-        actorContext.send(message)
+        # proto_dag = to_proto_dag(dag)
+        # message = controller_pb2.Message(
+        #     Type=controller_pb2.CommandType.FR_DAG,
+        #     DAG=proto_dag,
+        # )
+        # actorContext.send(message)
         self._pending_tasks: set[Future] = set()
         self._map_future_callback: dict[Future, Callable[[Future], Any]] = {}
         self._map_future_params: dict[Future, Tuple[Future]] = {}
@@ -445,6 +448,7 @@ class ActorExecutor(Executor):
             del self._map_future_params[fut]
 
     def _get_real_result(self, data: controller_pb2.Data):
+        actorContext = ActorContext.createContext()
         message = controller_pb2.Message(
             Type = controller_pb2.CommandType.FR_REQUEST_OBJECT,
             RequestObject = controller_pb2.RequestObject(
@@ -458,6 +462,7 @@ class ActorExecutor(Executor):
         return result
 
     def execute(self):
+        actorContext = ActorContext.createContext()
         session_id = str(uuid.uuid4())
         while not self.dag.hasDone():
             _task_lock = threading.Lock()

@@ -44,4 +44,4 @@ def workflow2(wf: Workflow):
 serve = Serve()
 serve.add_route("/w1", workflow1)
 serve.add_route("/w2", workflow2)
-serve.serve(port=8080)
+serve.serve(port=8081)

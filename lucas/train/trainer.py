@@ -225,7 +225,7 @@ class ParameterServer:
             raise ValueError("No function wrapper set for evaluation function")
         if self._provider is None:
             raise ValueError("No provider set for evaluation function")
-        evaluate_func = self._evaluate_func.export()
+        evaluate_func = self._evaluate_func._origin_fn
         @function(
             wrapper=self._function_wrapper,
             dependency=[],

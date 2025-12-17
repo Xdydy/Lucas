@@ -5,6 +5,17 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "master",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "lucas.cluster.server",
+            "args": [
+                "master",
+                "--port",
+                "50051"
+            ]
+        },
+        {
             "name": "worker",
             "type": "debugpy",
             "request": "launch",
@@ -20,23 +31,20 @@
             ]
         },
         {
-            "name": "master",
-            "type": "debugpy",
-            "request": "launch",
-            "module": "lucas.cluster.server",
-            "args": [
-                "master",
-                "--port",
-                "50051"
-            ]
-        },
-        {
             "name": "Python 调试程序: 当前文件",
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
             "cwd": "${fileDirname}"
+        },
+        {
+            "name": "actor.server",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "lucas.actorc.server",
+            "args": [
+            ]
         }
     ]
 }

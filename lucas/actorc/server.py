@@ -106,7 +106,7 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                         Type=controller_pb2.CommandType.FR_RESPONSE_OBJECT,
                         ResponseObject=controller_pb2.ResponseObject(
                             ID=obj_id,
-                            Value=EncDec.encode(value)
+                            Value=EncDec.encode(value, language=platform_pb2.Language.LANG_PYTHON)
                         )
                     )
                 else:
