@@ -179,6 +179,10 @@ class ActorFunction(Function):
         except AttributeError:
             memory = None
         try:
+            gpu = self._config.gpu
+        except AttributeError:
+            gpu = None
+        try:
             replicas = self._config.replicas
         except AttributeError:
             replicas = 1
