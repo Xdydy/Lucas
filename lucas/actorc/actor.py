@@ -207,6 +207,7 @@ class ActorFunction(Function):
                 Resources=controller_pb2.Resources(
                     CPU=cpu,
                     Memory=parse_memory_string(memory),
+                    GPU=gpu,
                 ),
                 Replicas=replicas,
                 Tags=tags,
