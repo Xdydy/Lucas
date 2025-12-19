@@ -738,7 +738,7 @@ class Master(
                     else:
                         log.error(f"Unknown message type received: {request.type}")
             except grpc.RpcError as e:
-                outgoing_q.put((None, None))
+                outgoing_q.put(None)
                 log.info("Session request stream closed by client")
             except Exception:
                 log.exception("Error reading session requests")

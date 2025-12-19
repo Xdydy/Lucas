@@ -10,6 +10,7 @@ from .scheduler import Scheduler
 
 from concurrent.futures import Future, wait, FIRST_COMPLETED
 from queue import Queue
+from pympler.asizeof import asizeof
 import cloudpickle
 import grpc
 import uuid
@@ -28,7 +29,13 @@ class Context:
     
     def __init__(self, master_addr: str):
         self._master_addr = master_addr
-        self._channel = grpc.insecure_channel(self._master_addr)
+        self._channel = grpc.insecure_channel(
+            self._master_addr, 
+            options=[
+                ('grpc.max_receive_message_length', 100 * 1024 * 1024), 
+                ('grpc.max_send_message_length', 100 * 1024 * 1024)
+            ]
+        )
         self._stub = platform_pb2_grpc.PlatformStub(self._channel)
         self._msg_queue = Queue()
         self._result: dict[str, Future] = {}
@@ -46,7 +53,11 @@ class Context:
     def _message_generator(self):
         while True:
             msg = self._msg_queue.get()
-            yield msg
+            if asizeof(msg) > 48 * 1024 * 1024:
+                # Split large messages
+                
+            else:
+                yield msg
     
     def _handle_responses(self):
         for resp in self._resp_stream:
