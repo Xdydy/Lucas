@@ -13,10 +13,19 @@ from typing import Any, Callable, List
 from google.protobuf import empty_pb2
 from pympler.asizeof import asizeof
 
+class GrpcOptions:
+    options = [
+        ('grpc.max_send_message_length', 100 * 1024 * 1024),
+        ('grpc.max_receive_message_length', 100 * 1024 * 1024),
+    ]
+    chunk_size = 4 * 1024 * 1024  # 4 MB
 class ControllerContext:
     def __init__(self, peer_address: str):
         self._peer_address = peer_address
-        self._channel = grpc.insecure_channel(peer_address)
+        self._channel = grpc.insecure_channel(
+            peer_address,
+            options=GrpcOptions.options
+        )
         self._stub = controller_pb2_grpc.ControllerServiceStub(self._channel)
         # store stub to fetch object bytes from remote controller's store service
         self._msg_queue = Queue()
@@ -90,7 +99,10 @@ class ControllerContext:
 class StoreContext:
     def __init__(self, peer_address: str):
         self._peer_address = peer_address
-        self._channel = grpc.insecure_channel(peer_address)
+        self._channel = grpc.insecure_channel(
+            peer_address,
+            options=GrpcOptions.options
+        )
         self._stub = store_pb2_grpc.StoreServiceStub(self._channel)
         self._resp_stream: grpc.Call = self._stub.PublishSession(empty_pb2.Empty())
         self._subscribe_stream: grpc.Call = self._stub.SubscribeSession(empty_pb2.Empty())
@@ -148,16 +160,28 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
         key = request.ref
         data = self.get(key)
         if data is None:
-            return store_pb2.GetObjectResponse(
+            yield store_pb2.GetObjectResponse(
                 error=f"Object with key {key} not found."
             )
-        return store_pb2.GetObjectResponse(data=cloudpickle.dumps(data))
+            return
+        # Stream the serialized object in chunks to avoid sending a huge
+        # single message. The client will reassemble the bytes and
+        # cloudpickle.loads them.
+        serialized = cloudpickle.dumps(data)
+        chunk_size = GrpcOptions.chunk_size  
+        for i in range(0, len(serialized), chunk_size):
+            yield store_pb2.GetObjectResponse(data=serialized[i : i + chunk_size])
     
-    def PutObject(self, request, context):
-        request: store_pb2.PutObjectRequest
-        data = request.data
-        key = request.key
-        data = cloudpickle.loads(data)
+    def PutObject(self, request_stream, context):
+        key = None
+        buffer = bytearray()
+        for request in request_stream:
+            request: store_pb2.PutObjectRequest
+            if key is None:
+                key = request.key
+            if request.data:
+                buffer.extend(request.data)
+        data = cloudpickle.loads(bytes(buffer))
         self.put(key, data)
         self.publish(store_pb2.Publish(ref=key))
         if key in self._subscribe_list:
@@ -244,12 +268,18 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
     
     def _transmit_result(self, result, session_id, instance_id, function_name) -> controller_pb2.Data:
         obj_id = f"{session_id}_{instance_id}_{function_name}"
-        put_request = store_pb2.PutObjectRequest(key=obj_id, data=cloudpickle.dumps(result))
-        self._store_service.PutObject(put_request, None)
+        put_data = cloudpickle.dumps(result)
+        def request_generator():
+            for i in range(0, len(put_data), GrpcOptions.chunk_size):
+                yield store_pb2.PutObjectRequest(
+                    key=obj_id,
+                    data=put_data[i : i + GrpcOptions.chunk_size]
+                )
+        self._store_service.PutObject(request_generator(), None)
         return controller_pb2.Data(
             type=controller_pb2.Data.ObjectType.OBJ_REF,
             ref=obj_id,
-            size=asizeof(put_request.data)
+            size=asizeof(put_data)
         )
     
     def _execute_function_impl(self, sanbox: ExecutorSandBox, session_id: str, instance_id: str, function_name: str) -> Any:
@@ -415,6 +445,21 @@ class Master(
             # self._subscribes = Queue()
             self._subscribes_out = Queue()
             self._out_store = out_store
+
+        def _request_generator(self, key, data):
+            for i in range(0, len(data), GrpcOptions.chunk_size):
+                yield store_pb2.PutObjectRequest(
+                    key=key,
+                    data=data[i : i + GrpcOptions.chunk_size]
+                )
+        def _receive_obj(self, msg: store_pb2.GetObjectResponse) -> Any:
+            buffer = bytearray()
+            for resp in msg:
+                if resp.error != "":
+                    log.error(f"Error getting object: {resp.error}")
+                buffer.extend(resp.data)
+            data = cloudpickle.loads(bytes(buffer))
+            return data
         
         def handle_subscribe(self, msg: store_pb2.Subscribe):
             log.info(f"Handling subscribe for ref: {msg.ref} from subscriber: {msg.subscriber_id}")
@@ -428,24 +473,27 @@ class Master(
                     log.info(f"Waiting for ref: {msg.ref} to be published")
                     self._refs_cond.wait()
                     log.info(f"Woke up for ref: {msg.ref}")
-            put_request: store_pb2.PutObjectRequest = None
+            put_data = None
             if worker_id == "local":
                 data = self._out_store.get(msg.ref)
-                put_request = store_pb2.PutObjectRequest(key=msg.ref, data=cloudpickle.dumps(data))
+                put_data = cloudpickle.dumps(data)
             else:
                 sub_meta = self._metas[worker_id]
-                channel = grpc.insecure_channel(f"{sub_meta._host}:{sub_meta._port}")
+                channel = grpc.insecure_channel(
+                    f"{sub_meta._host}:{sub_meta._port}",
+                    options=GrpcOptions.options
+                )
                 stub = store_pb2_grpc.StoreServiceStub(channel)
                 request = store_pb2.GetObjectRequest(ref=msg.ref)
-                resp: store_pb2.GetObjectResponse = stub.GetObject(request)
-                if resp.error != "":
-                    log.error(f"Error getting object: {resp.error}")
-                put_request = store_pb2.PutObjectRequest(key=msg.ref, data=resp.data)
+                resp_stream: store_pb2.GetObjectResponse = stub.GetObject(request)
+                obj = self._receive_obj(resp_stream)
+                put_data = cloudpickle.dumps(obj)
+            put_request = self._request_generator(msg.ref, put_data)
             if msg.subscriber_id == "local":
                 self._out_store.PutObject(put_request, None)
             else:
                 sub_meta = self._metas[msg.subscriber_id]
-                channel = grpc.insecure_channel(f"{sub_meta._host}:{sub_meta._port}")
+                channel = grpc.insecure_channel(f"{sub_meta._host}:{sub_meta._port}",options=GrpcOptions.options)
                 stub = store_pb2_grpc.StoreServiceStub(channel)
                 stub.PutObject(put_request)
                 # self._out_store.put(msg.ref, cloudpickle.loads(resp.data))
@@ -831,17 +879,20 @@ class Master(
 
 
     def GetObject(self, request, context):
-        resp = StorageService.GetObject(self, request, context)
-        if resp.error == "":
-            return resp
-        return self.get_object(request)
+        resp_stream = StorageService.GetObject(self, request, context)
+        for resp in resp_stream:
+            if resp.error != "":
+                break
+            yield resp
+        else:
+            return self.get_object(request)
     
     def ClearStore(self, request, context):
         StorageService.ClearStore(self, request, context)
         self._store_proxy.clear(request)
         return store_pb2.ClearStoreResponse()
 
-    def get_object(self, request: store_pb2.GetObjectRequest) -> store_pb2.GetObjectResponse:
+    def get_object(self, request: store_pb2.GetObjectRequest):
         ref = request.ref
         if not self._store_proxy.exists(ref):
             return store_pb2.GetObjectResponse(
@@ -849,12 +900,21 @@ class Master(
             )
         worker_id = self._store_proxy.get_worker_id(ref)
         meta = self._controller_proxy.get_worker(worker_id)
-        channel = grpc.insecure_channel(f"{meta._host}:{meta._port}")
+        channel = grpc.insecure_channel(
+            f"{meta._host}:{meta._port}",
+            options=GrpcOptions.options
+        )
         stub = store_pb2_grpc.StoreServiceStub(channel)
-        resp: store_pb2.GetObjectResponse = stub.GetObject(request)
-        if resp.error != "":
-            log.error(f"Error getting object: {resp.error}")
-        return resp
+        resp_stream: store_pb2.GetObjectResponse = stub.GetObject(request)
+        for resp in resp_stream:
+            if resp.error != "":
+                log.error(f"Error getting object: {resp.error}")
+                break
+            yield resp
+        else:
+            yield store_pb2.GetObjectResponse(
+                error=f"Failed to get object {ref} from worker {worker_id}."
+            )
         
 class Worker(
     Controller,
@@ -906,7 +966,10 @@ if __name__ == "__main__":
 
     args = arg_parser.parse_args()
     if args.role == "master":
-        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=10),
+            options=GrpcOptions.options
+        )
         master = Master()
         store_pb2_grpc.add_StoreServiceServicer_to_server(master.get_store_service(), server)
         cluster_pb2_grpc.add_ClusterServiceServicer_to_server(master, server)
@@ -918,7 +981,10 @@ if __name__ == "__main__":
         server.wait_for_termination()
     elif args.role == "worker":
         # Worker implementation would go here
-        server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=10),
+            options=GrpcOptions.options
+        )
         worker = Worker(
             master_address=args.master_address,
             worker_host=args.worker_host,

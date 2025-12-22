@@ -113,10 +113,10 @@ scheduler.analyze(dag)
 w_func = symmetric_encryption_workflow.export()
 
 payloads = [
-    {"data_size_kb": 1000, "key_size": 16},
-    {"data_size_kb": 2000, "key_size": 16},
-    {"data_size_kb": 3000, "key_size": 16},
-    {"data_size_kb": 4000, "key_size": 16},
+    {"data_size_kb": 10000, "key_size": 16},
+    {"data_size_kb": 20000, "key_size": 16},
+    {"data_size_kb": 30000, "key_size": 16},
+    {"data_size_kb": 40000, "key_size": 16},
 ]
 out = []
 for payload in payloads:

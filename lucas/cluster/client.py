@@ -53,11 +53,7 @@ class Context:
     def _message_generator(self):
         while True:
             msg = self._msg_queue.get()
-            if asizeof(msg) > 48 * 1024 * 1024:
-                # Split large messages
-                
-            else:
-                yield msg
+            yield msg
     
     def _handle_responses(self):
         for resp in self._resp_stream:
@@ -142,14 +138,27 @@ class Context:
         self._msg_queue.put(platform_msg)
 
     def get_obj(self, refid: str):
-        channel = grpc.insecure_channel(self._master_addr)
+        channel = grpc.insecure_channel(self._master_addr, options=[
+            ('grpc.max_receive_message_length', 100 * 1024 * 1024), 
+            ('grpc.max_send_message_length', 100 * 1024 * 1024)
+        ])
         stub = store_pb2_grpc.StoreServiceStub(channel)
-        resp: store_pb2.GetObjectResponse = stub.GetObject(store_pb2.GetObjectRequest(ref=refid))
-        if resp.error != "":
-            log.error(f"Error getting object {refid}: {resp.error}")
-            return None
-        else:
-            return cloudpickle.loads(resp.data)
+        resp_stream: store_pb2.GetObjectResponse = stub.GetObject(store_pb2.GetObjectRequest(ref=refid))
+        buf = bytearray()
+        for resp in resp_stream:
+            if resp.error:
+                log.error(f"Error getting object {refid}: {resp.error}")
+                return None
+            if resp.data:
+                buf.extend(resp.data)
+        try:
+            obj = cloudpickle.loads(bytes(buf))
+        finally:
+            try:
+                channel.close()
+            except Exception:
+                pass
+        return obj
     
 class ClusterRuntime(Runtime):
     def __init__(self, metadata: Metadata):

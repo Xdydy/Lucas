@@ -35,12 +35,12 @@ class StoreServiceStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.GetObject = channel.unary_unary(
+        self.GetObject = channel.unary_stream(
                 '/store.StoreService/GetObject',
                 request_serializer=store__pb2.GetObjectRequest.SerializeToString,
                 response_deserializer=store__pb2.GetObjectResponse.FromString,
                 _registered_method=True)
-        self.PutObject = channel.unary_unary(
+        self.PutObject = channel.stream_unary(
                 '/store.StoreService/PutObject',
                 request_serializer=store__pb2.PutObjectRequest.SerializeToString,
                 response_deserializer=store__pb2.PutObjectResponse.FromString,
@@ -76,7 +76,7 @@ class StoreServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def PutObject(self, request, context):
+    def PutObject(self, request_iterator, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -113,12 +113,12 @@ class StoreServiceServicer(object):
 
 def add_StoreServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'GetObject': grpc.unary_unary_rpc_method_handler(
+            'GetObject': grpc.unary_stream_rpc_method_handler(
                     servicer.GetObject,
                     request_deserializer=store__pb2.GetObjectRequest.FromString,
                     response_serializer=store__pb2.GetObjectResponse.SerializeToString,
             ),
-            'PutObject': grpc.unary_unary_rpc_method_handler(
+            'PutObject': grpc.stream_unary_rpc_method_handler(
                     servicer.PutObject,
                     request_deserializer=store__pb2.PutObjectRequest.FromString,
                     response_serializer=store__pb2.PutObjectResponse.SerializeToString,
@@ -165,7 +165,7 @@ class StoreService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(
+        return grpc.experimental.unary_stream(
             request,
             target,
             '/store.StoreService/GetObject',
@@ -182,7 +182,7 @@ class StoreService(object):
             _registered_method=True)
 
     @staticmethod
-    def PutObject(request,
+    def PutObject(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -192,8 +192,8 @@ class StoreService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
+        return grpc.experimental.stream_unary(
+            request_iterator,
             target,
             '/store.StoreService/PutObject',
             store__pb2.PutObjectRequest.SerializeToString,

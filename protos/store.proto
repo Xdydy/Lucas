@@ -53,8 +53,8 @@ message Subscribe {
 
 
 service StoreService {
-    rpc GetObject(GetObjectRequest) returns (GetObjectResponse) {}
-    rpc PutObject(PutObjectRequest) returns (PutObjectResponse) {}
+    rpc GetObject(GetObjectRequest) returns (stream GetObjectResponse) {}
+    rpc PutObject(stream PutObjectRequest) returns (PutObjectResponse) {}
     // Delete an object from the store.
     rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse) {}
     // Clear the entire store.
