@@ -1,0 +1,55 @@
+[
+  {
+    "id": "00429c36-d310-41c0-994b-504db8e77faa",
+    "done": true,
+    "no": 1,
+    "type": "ControlNode",
+    "functionname": "inference",
+    "params": {
+      "fc1ebc03-a656-40ec-bad9-e9f09ff9ac5e": "a"
+    },
+    "current": {
+      "a": "80059509000000000000008c05416c696365942e",
+      "sessionID": "80059528000000000000008c2432376365336232302d323532632d346165642d383539332d333334636465393830643461942e",
+      "instanceID": "80059528000000000000008c2430303432396333362d643331302d343163302d393934622d353034646238653737666161942e",
+      "name": "8005950d000000000000008c09696e666572656e6365942e"
+    },
+    "data_node": "8039edd4-7d77-42fe-8910-109eb0995f7a",
+    "pre_data_nodes": [
+      "8434a0dc-7700-471e-87e6-4b6cf4c7b53f"
+    ],
+    "functiontype": "remote"
+  },
+  {
+    "id": "8434a0dc-7700-471e-87e6-4b6cf4c7b53f",
+    "done": true,
+    "no": 0,
+    "type": "DataNode",
+    "lambda": {
+      "id": "fc1ebc03-a656-40ec-bad9-e9f09ff9ac5e",
+      "value": "80059509000000000000008c05416c696365942e"
+    },
+    "ready": true,
+    "suf_control_nodes": [
+      "00429c36-d310-41c0-994b-504db8e77faa"
+    ],
+    "pre_control_node": null,
+    "parent_node": null,
+    "child_node": []
+  },
+  {
+    "id": "8039edd4-7d77-42fe-8910-109eb0995f7a",
+    "done": true,
+    "no": 2,
+    "type": "DataNode",
+    "lambda": {
+      "id": "345bcd33-d432-4453-ac0a-ea03a10d30ad",
+      "value": "80059598000000000000008c19636f6e74726f6c6c65722e636f6e74726f6c6c65725f706232948c04446174619493942952947d948c0a73657269616c697a656494435b080112570a5332376365336232302d323532632d346165642d383539332d3333346364653938306434612d30303432396333362d643331302d343163302d393934622d3530346462386537376661612d696e666572656e636512009473622e"
+    },
+    "ready": true,
+    "suf_control_nodes": [],
+    "pre_control_node": "00429c36-d310-41c0-994b-504db8e77faa",
+    "parent_node": null,
+    "child_node": []
+  }
+]

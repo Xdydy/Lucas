@@ -15,7 +15,7 @@ class Serve:
         def handler():
             input_data = request.get_json()
             result = fn(input_data)
-            return jsonify({'status': 1}), 200
+            return jsonify({'status': 1, 'result': result}), 200
         handler.__name__ = f"handler_{path.replace('/', '_')}"
         self._route[path] = handler
 

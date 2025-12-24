@@ -11,10 +11,13 @@ ActorContext.createContext()
     venv='conda'
 )
 class A:
+    def __init__(self):
+        self.c = 3
     def methodA(self, a, b):
+        self.c = a + b
         return a + b
     def methodB(self, a, b):
-        return a * b
+        return self.c
 
 a = A.export()
 result1 = a.remote("methodA", {"a": 2, "b": 3})
