@@ -212,44 +212,67 @@ class ActorFunction(Function):
         self._params = []
         self._instance_id = str(uuid.uuid4())
         super().__init__(fn, config)
+
     def onFunctionInit(self, fn):
         actorContext = ActorContext.createContext()
-        dependcy = self._config.dependency
-        fn_name = self._config.name
-        venv = self._config.venv
-        cpu = None
-        memory = None
-        try:
-            cpu = self._config.cpu
-        except AttributeError:
-            cpu = None
-        try:
-            memory = self._config.memory
-        except AttributeError:
-            memory = None
-        try:
-            replicas = self._config.replicas
-        except AttributeError:
-            replicas = 1
+        dependcy = self._config.get('dependency', [])
+        fn_name = self._config.get('name', fn.__name__)
+        venv = self._config.get('venv', None)
+        cpu = self._config.get('cpu', None)
+        memory = self._config.get('memory', None)
+        replicas = self._config.get('replicas', 1)
+        backend = self._config.get('backend', None)    
+
+        message = None
         sig = inspect.signature(fn)
         for name, param in sig.parameters.items():
             self._params.append(name)
-        message = controller_pb2.Message(
-            Type=controller_pb2.CommandType.FR_APPEND_PY_FUNC,
-            AppendPyFunc=controller_pb2.AppendPyFunc(
-                Name=fn_name,
-                Params=self._params,
-                Venv=venv,
-                Requirements=dependcy,
-                PickledObject=cloudpickle.dumps(fn),
-                Language=platform_pb2.LANG_PYTHON,
-                Resources=controller_pb2.Resources(
-                    CPU=cpu,
-                    Memory=parse_memory_string(memory),
+        if backend == "unikernel":
+            message = controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_APPEND_UNIKERNEL,
+                AppendUnikernel=controller_pb2.AppendUnikernel(
+                    Name=fn_name,
+                    Params=self._params,
+                    Unikernel=fn.__doc__,
+                    Language=platform_pb2.LANG_PYTHON,
+                    Resources=controller_pb2.Resources(
+                        CPU=cpu,
+                        Memory=parse_memory_string(memory),
+                    ),
+                    Replicas=replicas,
                 ),
-                Replicas=replicas,
-            ),
-        )
+            )
+        elif backend == "go":
+            message = controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_APPEND_GO,
+                AppendGo=controller_pb2.AppendGo(
+                    Name=fn_name,
+                    Params=self._params,
+                    Language=platform_pb2.LANG_GO,
+                    Resources=controller_pb2.Resources(
+                        CPU=cpu,
+                        Memory=parse_memory_string(memory),
+                    ),
+                    Replicas=replicas,
+                ),
+            )
+        else:
+            message = controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_APPEND_PY_FUNC,
+                AppendPyFunc=controller_pb2.AppendPyFunc(
+                    Name=fn_name,
+                    Params=self._params,
+                    Venv=venv,
+                    Requirements=dependcy,
+                    PickledObject=cloudpickle.dumps(fn),
+                    Language=platform_pb2.LANG_PYTHON,
+                    Resources=controller_pb2.Resources(
+                        CPU=cpu,
+                        Memory=parse_memory_string(memory),
+                    ),
+                    Replicas=replicas,
+                ),
+            )
         actorContext.send(message)
 
     def _transformfunction(self, fn):

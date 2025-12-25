@@ -288,6 +288,11 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                     print(response)
                     yield response
 
+            elif request.Type == controller_pb2.CommandType.FR_APPEND_UNIKERNEL:
+                append_unikernel = request.AppendUnikernel
+                unikernel = append_unikernel.Unikernel
+                print(unikernel)
+
 # class ClusterServer(cluster_pb2_grpc.ServiceServicer):
 #     def __init__(self, grpc_server: GRPCServer):
 #         self._grpc_server = grpc_server

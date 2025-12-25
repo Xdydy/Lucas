@@ -13,7 +13,6 @@ from .workflow import Workflow,Route,RouteBuilder,RouteRunner,WorkflowContext,Ro
 from typing import Callable, Any
 import inspect
 from ._private import (
-    FunctionConfig,
     LocalFunction,
     AliyunFunction,
     KnativeFunction,
@@ -74,7 +73,7 @@ def durable(*args, **kwargs) -> Function:
         fn_name = kwargs.get('name', fn.__name__)
         cpu = kwargs.get('cpu', 0.5)
         memory = kwargs.get('memory', 128)
-        fn_config = FunctionConfig(provider=provider, cpu=cpu, memory=memory, name=fn_name)
+        fn_config = dict(kwargs)
         func = DurableFunction(fn, fn_config)
         routeBuilder.func(fn_name).set_handler(func.export())
         return func
@@ -104,7 +103,7 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
             'dependency': dependency
         })
         func_cls = kwargs.get('wrapper', None)
-        fn_config = FunctionConfig(**kwargs)
+        fn_config = dict(kwargs)
         if provider == 'local':
             func = LocalFunction(fn, fn_config)
         elif provider == 'aliyun':
@@ -113,6 +112,9 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
             func = KnativeFunction(fn, fn_config)
         elif provider == 'local-once':
             func = LocalOnceFunction(fn, fn_config)
+        elif provider == "actor":
+            from lucas.actorc.actor import ActorFunction
+            func = ActorFunction(fn, fn_config)
         elif provider == 'cluster':
             from lucas.cluster.client import ClusterFunction
             func = ClusterFunction(fn, fn_config)
