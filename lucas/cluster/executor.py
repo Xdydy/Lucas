@@ -37,28 +37,6 @@ class FunctionExecutor:
         self._sandboxes[instance_id] = sandbox
         return sandbox
 
-    # def apply_args(self, instance_id:str, data: dict):
-    #     if instance_id not in self._sandboxes:
-    #         raise RuntimeError(f"Instance {instance_id} not found")
-    #     sandbox = self._sandboxes[instance_id]
-    #     sandbox.apply_args(data)
-
-    # def can_run(self, instance_id: str) -> bool:
-    #     if instance_id not in self._sandboxes:
-    #         raise RuntimeError(f"Instance {instance_id} not found")
-    #     sandbox = self._sandboxes[instance_id]
-    #     return sandbox.can_run()
-    # def run(self, instance_id: str):
-    #     if instance_id not in self._sandboxes:
-    #         raise RuntimeError(f"Instance {instance_id} not found")
-    #     try:
-    #         sandbox = self._sandboxes[instance_id]
-    #         result = sandbox.run()
-    #     except Exception as e:
-    #         raise RuntimeError(f"Failed to run function in instance {instance_id}: {e}")
-    #     finally:
-    #         del self._sandboxes[instance_id]
-    #     return result
     
 class ClassExecutor:
     def __init__(self, obj, methods: list[controller_pb2.AppendClass.Method]):
@@ -67,6 +45,7 @@ class ClassExecutor:
         self._sandboxes : dict[str, dict[str, ExecutorSandBox]] = {}
 
     def create_instance(self, instance_id: str, method_name: str):
+        method_name = method_name.split(".")[-1]
         if method_name not in [m.method_name for m in self._methods]:
             raise RuntimeError(f"Method {method_name} not found in class executor")
         if method_name not in self._sandboxes:

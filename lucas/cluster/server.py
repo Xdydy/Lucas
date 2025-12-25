@@ -1,3 +1,4 @@
+import dill
 import grpc
 import cloudpickle
 import uuid
@@ -9,7 +10,7 @@ from .executor import ExecutorSandBox, FunctionExecutor, ClassExecutor
 
 from argparse import ArgumentParser
 from queue import Queue
-from typing import Any, Callable, List
+from typing import Any, Callable, Generator, List
 from google.protobuf import empty_pb2
 from pympler.asizeof import asizeof
 
@@ -167,21 +168,37 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
         # Stream the serialized object in chunks to avoid sending a huge
         # single message. The client will reassemble the bytes and
         # cloudpickle.loads them.
-        serialized = cloudpickle.dumps(data)
-        chunk_size = GrpcOptions.chunk_size  
-        for i in range(0, len(serialized), chunk_size):
-            yield store_pb2.GetObjectResponse(data=serialized[i : i + chunk_size])
+        if isinstance(data, Generator):
+            serialized_data = dill.dumps(data)
+            yield store_pb2.GetObjectResponse(
+                data=serialized_data,
+                type=store_pb2.ObjectType.GENERATOR
+            )
+        else:
+            serialized_data = cloudpickle.dumps(data)
+            chunk_size = GrpcOptions.chunk_size  
+            for i in range(0, len(serialized_data), chunk_size):
+                yield store_pb2.GetObjectResponse(
+                    data=serialized_data[i : i + chunk_size],
+                    type=store_pb2.ObjectType.BYTES
+                )
     
     def PutObject(self, request_stream, context):
         key = None
         buffer = bytearray()
+        obj_type = None
         for request in request_stream:
             request: store_pb2.PutObjectRequest
             if key is None:
                 key = request.key
+            if obj_type is None:
+                obj_type = request.type
             if request.data:
                 buffer.extend(request.data)
-        data = cloudpickle.loads(bytes(buffer))
+        if obj_type == store_pb2.ObjectType.GENERATOR:
+            data = dill.loads(bytes(buffer))
+        elif obj_type == store_pb2.ObjectType.BYTES:
+            data = cloudpickle.loads(bytes(buffer))
         self.put(key, data)
         self.publish(store_pb2.Publish(ref=key))
         if key in self._subscribe_list:
@@ -268,12 +285,24 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
     
     def _transmit_result(self, result, session_id, instance_id, function_name) -> controller_pb2.Data:
         obj_id = f"{session_id}_{instance_id}_{function_name}"
-        put_data = cloudpickle.dumps(result)
+        put_data = result
+        if isinstance(result, Generator):
+            put_data = dill.dumps(result)
+        else:
+            put_data = cloudpickle.dumps(result)
         def request_generator():
+            if isinstance(result, Generator):
+                yield store_pb2.PutObjectRequest(
+                    key=obj_id,
+                    data=put_data,
+                    type=store_pb2.ObjectType.GENERATOR
+                )
+                return
             for i in range(0, len(put_data), GrpcOptions.chunk_size):
                 yield store_pb2.PutObjectRequest(
                     key=obj_id,
-                    data=put_data[i : i + GrpcOptions.chunk_size]
+                    data=put_data[i : i + GrpcOptions.chunk_size],
+                    type=store_pb2.ObjectType.BYTES
                 )
         self._store_service.PutObject(request_generator(), None)
         return controller_pb2.Data(
@@ -316,6 +345,20 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
                 message=f"Function {function_name} appended successfully."
             )
         )
+    def _append_class(self, append_class_request: controller_pb2.AppendClass) -> controller_pb2.Message:
+        class_name = append_class_request.class_name
+        class_code = append_class_request.class_code
+        cls = cloudpickle.loads(class_code)
+        class_params = append_class_request.methods
+        executor = ClassExecutor(cls, class_params)
+        self._classes[class_name] = executor
+        log.info(f"Appended class: {class_name}")
+        return controller_pb2.Message(
+            type=controller_pb2.MessageType.ACK,
+            ack=controller_pb2.Ack(
+                message=f"Class {class_name} appended successfully."
+            )
+        )
     def _append_function_arg(self, append_fn_arg_request: controller_pb2.AppendFunctionArg) -> controller_pb2.Message:
         function_name = append_fn_arg_request.function_name
         session_id = append_fn_arg_request.session_id
@@ -326,7 +369,7 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
             log.error(f"Function {function_name} not found.")
             return controller_pb2.Message(
                 type=controller_pb2.MessageType.ACK,
-                error=controller_pb2.Ack(
+                ack=controller_pb2.Ack(
                     error=f"Function {function_name} not found."
                 )
             )
@@ -337,22 +380,43 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         log.info(f"Appended args for function: {function_name}, instance: {instance_id}")
         if sandbox.can_run():
             return self._execute_function_impl(sandbox, session_id, instance_id, function_name)
-            log.info(f"Function {function_name} is ready to run.")
-            result = sandbox.run()
-            result_data = self._transmit_result(result, session_id, instance_id, function_name)
-            log.info(f"Invoked function: {function_name}")
-            return controller_pb2.Message(
-                type=controller_pb2.MessageType.RT_RESULT,
-                return_result=controller_pb2.ReturnResult(
-                    value=result_data
-                )
-            )
         else:
             log.info(f"Function {function_name} is not ready to run.")
             return controller_pb2.Message(
                 type=controller_pb2.MessageType.ACK,
                 ack=controller_pb2.Ack(
                     message=f"Args for function {function_name}, instance {instance_id} appended successfully."
+                )
+            )
+    def _append_class_method_arg(self, append_class_method_arg_request: controller_pb2.AppendClassMethodArg) -> controller_pb2.Message:
+        class_name = append_class_method_arg_request.class_name
+        method_name = append_class_method_arg_request.method_name
+        session_id = append_class_method_arg_request.session_id
+        instance_id = append_class_method_arg_request.instance_id
+        function_id = append_class_method_arg_request.function_id
+        args_data = append_class_method_arg_request.value
+        param_name = append_class_method_arg_request.param_name
+        if class_name not in self._classes:
+            log.error(f"Class {class_name} not found.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    error=f"Class {class_name} not found."
+                )
+            )
+        executor = self._classes[class_name]
+        sandbox = executor.create_instance(f"{session_id}_{instance_id}_{function_id}", method_name)
+        data = self._transmit_data(args_data)
+        sandbox.apply_args({param_name: data})
+        log.info(f"Appended args for class: {class_name}, method: {method_name}, instance: {instance_id}")
+        if sandbox.can_run():
+            return self._execute_function_impl(sandbox, session_id, f"{instance_id}_{function_id}", method_name)
+        else:
+            log.info(f"Method {method_name} of class {class_name} is not ready to run.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    message=f"Args for method {method_name} of class {class_name}, instance {instance_id} appended successfully."
                 )
             )
     def _invoke_function(self, invoke_fn_request: controller_pb2.InvokeFunction) -> controller_pb2.Message:
@@ -362,7 +426,7 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
             log.error(f"Function {function_name} not found.")
             return controller_pb2.Message(
                 type=controller_pb2.MessageType.ACK,
-                error=controller_pb2.Ack(
+                ack=controller_pb2.Ack(
                     error=f"Function {function_name} not found."
                 )
             )
@@ -371,21 +435,39 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         sandbox.set_run()
         if sandbox.can_run():
             return self._execute_function_impl(sandbox, invoke_fn_request.session_id, instance_id, function_name)
-            result = sandbox.run()
-            result_data = self._transmit_result(result, invoke_fn_request.session_id, instance_id, function_name)
-            log.info(f"Invoked function: {function_name}")
-            return controller_pb2.Message(
-                type=controller_pb2.MessageType.RT_RESULT,
-                return_result=controller_pb2.ReturnResult(
-                    value=result_data
-                )
-            )
         else:
             log.info(f"Function {function_name} is not ready to run.")
             return controller_pb2.Message(
                 type=controller_pb2.MessageType.ACK,
                 ack=controller_pb2.Ack(
                     message=f"Function {function_name} is not ready to run."
+                )
+            )
+    def _invoke_class_method(self, invoke_class_method_request: controller_pb2.InvokeClassMethod) -> controller_pb2.Message:
+        class_name = invoke_class_method_request.class_name
+        method_name = invoke_class_method_request.method_name
+        session_id = invoke_class_method_request.session_id
+        instance_id = invoke_class_method_request.instance_id
+        function_id = invoke_class_method_request.function_id
+        if class_name not in self._classes:
+            log.error(f"Class {class_name} not found.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                error=controller_pb2.Ack(
+                    error=f"Class {class_name} not found."
+                )
+            )
+        executor = self._classes[class_name]
+        sandbox = executor.create_instance(f"{session_id}_{instance_id}_{function_id}", method_name)
+        sandbox.set_run()
+        if sandbox.can_run():
+            return self._execute_function_impl(sandbox, session_id, f"{instance_id}_{function_id}", method_name)
+        else:
+            log.info(f"Method {method_name} of class {class_name} is not ready to run.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    message=f"Method {method_name} of class {class_name} is not ready to run."
                 )
             )
 
@@ -398,6 +480,21 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
             resp = self._append_function_arg(request.append_function_arg)
         elif request.type == controller_pb2.MessageType.INVOKE_FUNCTION:
             resp = self._invoke_function(request.invoke_function)
+        elif request.type == controller_pb2.MessageType.APPEND_CLASS:
+            resp = self._append_class(request.append_class)
+        elif request.type == controller_pb2.MessageType.APPEND_CLASS_METHOD_ARG:
+            resp = self._append_class_method_arg(request.append_class_method_arg)
+        elif request.type == controller_pb2.MessageType.INVOKE_CLASS_METHOD:
+            resp = self._invoke_class_method(request.invoke_class_method)
+        else:
+            log.warning(f"Unknown controller message type: {request.type}")
+            resp = controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    error=f"Unknown message type: {request.type}"
+                )
+            )
+
         return resp
     
     def get_store_service(self):
@@ -450,15 +547,22 @@ class Master(
             for i in range(0, len(data), GrpcOptions.chunk_size):
                 yield store_pb2.PutObjectRequest(
                     key=key,
-                    data=data[i : i + GrpcOptions.chunk_size]
+                    data=data[i : i + GrpcOptions.chunk_size],
+                    type=store_pb2.ObjectType.BYTES
                 )
         def _receive_obj(self, msg: store_pb2.GetObjectResponse) -> Any:
             buffer = bytearray()
+            obj_type = None
             for resp in msg:
                 if resp.error != "":
                     log.error(f"Error getting object: {resp.error}")
                 buffer.extend(resp.data)
-            data = cloudpickle.loads(bytes(buffer))
+                obj_type = resp.type
+            data = None
+            if obj_type == store_pb2.ObjectType.GENERATOR:
+                data = dill.loads(bytes(buffer))
+            else:
+                data = cloudpickle.loads(bytes(buffer))
             return data
         
         def handle_subscribe(self, msg: store_pb2.Subscribe):

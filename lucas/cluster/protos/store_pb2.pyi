@@ -1,9 +1,17 @@
 from google.protobuf import empty_pb2 as _empty_pb2
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import message as _message
-from typing import ClassVar as _ClassVar, Optional as _Optional
+from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
+
+class ObjectType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    BYTES: _ClassVar[ObjectType]
+    GENERATOR: _ClassVar[ObjectType]
+BYTES: ObjectType
+GENERATOR: ObjectType
 
 class GetObjectRequest(_message.Message):
     __slots__ = ("ref",)
@@ -12,20 +20,24 @@ class GetObjectRequest(_message.Message):
     def __init__(self, ref: _Optional[str] = ...) -> None: ...
 
 class GetObjectResponse(_message.Message):
-    __slots__ = ("data", "error")
+    __slots__ = ("data", "error", "type")
     DATA_FIELD_NUMBER: _ClassVar[int]
     ERROR_FIELD_NUMBER: _ClassVar[int]
+    TYPE_FIELD_NUMBER: _ClassVar[int]
     data: bytes
     error: str
-    def __init__(self, data: _Optional[bytes] = ..., error: _Optional[str] = ...) -> None: ...
+    type: ObjectType
+    def __init__(self, data: _Optional[bytes] = ..., error: _Optional[str] = ..., type: _Optional[_Union[ObjectType, str]] = ...) -> None: ...
 
 class PutObjectRequest(_message.Message):
-    __slots__ = ("data", "key")
+    __slots__ = ("data", "key", "type")
     DATA_FIELD_NUMBER: _ClassVar[int]
     KEY_FIELD_NUMBER: _ClassVar[int]
+    TYPE_FIELD_NUMBER: _ClassVar[int]
     data: bytes
     key: str
-    def __init__(self, data: _Optional[bytes] = ..., key: _Optional[str] = ...) -> None: ...
+    type: ObjectType
+    def __init__(self, data: _Optional[bytes] = ..., key: _Optional[str] = ..., type: _Optional[_Union[ObjectType, str]] = ...) -> None: ...
 
 class DeleteObjectRequest(_message.Message):
     __slots__ = ("ref",)

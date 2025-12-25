@@ -145,6 +145,14 @@ class ActorNode(ControlNode):
         super().__init__(fn, name, fn_type)
         self._obj = obj
 
+    def metadata(self, fn_export=False):
+        result = super().metadata(fn_export)
+        result['obj'] = cloudpickle.dumps(self._obj).hex()
+        result['objid'] = self._obj._id
+        result['type'] = "ActorNode"
+        result['classname'] = self._obj.get_class_name()
+        return result
+
 class DataNode(DAGNode):
     def __init__(self, ld: Lambda) -> None:
         super().__init__()

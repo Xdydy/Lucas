@@ -130,12 +130,15 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
         
 def actor(*args, **kwargs)-> ActorClass | Callable[[type], ActorClass]:
     def __actor(cls) -> ActorClass:
+        config = get_function_container_config()
         class_name = kwargs.get('name', cls.__name__)
         kwargs.setdefault('name', class_name)
         actorConfig = ActorConfig(**kwargs)
         class_cls = kwargs.get('wrapper', None)
-        if class_cls is None:
-            class_cls = ActorClass
+        provider = config['provider']
+        if provider == 'cluster':
+            from lucas.cluster.client import ClusterActor
+            class_cls = ClusterActor
         actor_class = class_cls(cls, actorConfig)
         return actor_class
     if len(args) == 1 and len(kwargs) == 0:

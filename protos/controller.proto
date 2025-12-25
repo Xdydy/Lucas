@@ -11,7 +11,9 @@ enum MessageType {
   APPEND_CLASS = 4; // append class
   APPEND_CLASS_METHOD_ARG = 5; // append class method
   INVOKE_FUNCTION = 6; // invoke function
-  RT_RESULT = 7; // return result
+  INVOKE_CLASS_METHOD = 7; // invoke class method
+  RT_RESULT = 8; // return result
+  RT_CLASS_METHOD_RESULT = 9; // return class method result
 }
 
 message Data {
@@ -57,16 +59,17 @@ message AppendClass {
     }
     string class_name = 1; // class name
     bytes class_code = 2; // class code
-    repeated string requirements = 3; // class dependencies
+    repeated Method methods = 3; // class methods
 }
 
 message AppendClassMethodArg {
     string session_id = 1; // current execution session
     string instance_id = 2; // id of class instance under current execution session
-    string class_name = 3; // class name
-    string method_name = 4; // method name
-    string param_name = 5; // param name
-    Data value = 6; // object or ref for param
+    string function_id = 3; // id of function instance under current execution session
+    string class_name = 4; // class name
+    string method_name = 5; // method name
+    string param_name = 6; // param name
+    Data value = 7; // object or ref for param
 }
 
 message InvokeFunction {
@@ -85,6 +88,26 @@ message ReturnResult {
     }
 }
 
+message InvokeClassMethod {
+    string session_id = 1; // current execution session
+    string instance_id = 2; // id of class instance under current execution session
+    string function_id = 3; // id of function instance under current execution session
+    string class_name = 4; // class name
+    string method_name = 5; // method name
+}
+
+message ReturnClassMethodResult {
+    string session_id = 1; // current execution session
+    string instance_id = 2; // id of class instance under current execution session
+    string function_id = 3; // id of function instance under current execution session
+    string class_name = 4; // class name
+    string method_name = 5; // method name
+    oneof result {
+        Data value = 6; // success: return result
+        string error = 7; // fail: return error
+    }
+}
+
 message Message {
     MessageType type = 1;
     oneof Message {
@@ -94,7 +117,9 @@ message Message {
         AppendClass append_class = 5;
         AppendClassMethodArg append_class_method_arg = 6;
         InvokeFunction invoke_function = 7;
-        ReturnResult return_result = 8;
+        InvokeClassMethod invoke_class_method = 8;
+        ReturnResult return_result = 9;
+        ReturnClassMethodResult return_class_method_result = 10;
     }
 }
 

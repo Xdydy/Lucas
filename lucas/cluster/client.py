@@ -77,6 +77,18 @@ class Context:
                     f.set_result(rt_result.value)
                     self._result[obj_id] = f
     
+    def _handle_controller_rt_classmethod_result(self, class_method_result: controller_pb2.ReturnClassMethodResult):
+        log.debug(f"Received class method result: {class_method_result.value}")
+        if class_method_result.value.type == controller_pb2.Data.ObjectType.OBJ_REF:
+            obj_id = class_method_result.value.ref
+            with self._result_lock:
+                if obj_id in self._result:
+                    self._result[obj_id].set_result(class_method_result.value)
+                else:
+                    f = Future()
+                    f.set_result(class_method_result.value)
+                    self._result[obj_id] = f
+    
     def _handle_controller_error(self, error: str):
         # Handle error accordingly
         obj_id = error.split(":")[0]
@@ -95,6 +107,8 @@ class Context:
         log.debug(f"Received controller response: {controller_message}")
         if controller_message.type == controller_pb2.MessageType.RT_RESULT:
             self._handle_controller_rt_result(controller_message.return_result)
+        elif controller_message.type == controller_pb2.MessageType.RT_CLASS_METHOD_RESULT:
+            self._handle_controller_rt_classmethod_result(controller_message.return_class_method_result)
         elif controller_message.type == controller_pb2.MessageType.ACK:
             self._handle_ack(controller_message.ack)
         else:
@@ -178,16 +192,34 @@ class ClusterRuntime(Runtime):
         context = Context.create_context()
         session_id = fnParams['session_id']
         instance_id = fnParams['instance_id']
-        msg = controller_pb2.Message(
-            type=controller_pb2.MessageType.INVOKE_FUNCTION,
-            invoke_function=controller_pb2.InvokeFunction(
-                session_id=session_id,
-                instance_id=instance_id,
-                function_name=fnName,
+        msg = None
+        key = None
+        if "classname" in fnParams:
+            class_name = fnParams['classname']
+            function_id = fnParams['function_id']
+            method_name = fnParams['name']
+            msg = controller_pb2.Message(
+                type=controller_pb2.MessageType.INVOKE_CLASS_METHOD,
+                invoke_class_method=controller_pb2.InvokeClassMethod(
+                    session_id=session_id,
+                    instance_id=instance_id,
+                    function_id=function_id,
+                    class_name=class_name,
+                    method_name=fnParams['name']
+                )
             )
-        )
+            key = f"{session_id}_{instance_id}_{function_id}_{method_name}"
+        else:
+            msg = controller_pb2.Message(
+                type=controller_pb2.MessageType.INVOKE_FUNCTION,
+                invoke_function=controller_pb2.InvokeFunction(
+                    session_id=session_id,
+                    instance_id=instance_id,
+                    function_name=fnName,
+                )
+            )
+            key = f"{session_id}_{instance_id}_{fnName}"
         context.send(msg)
-        key = f"{session_id}_{instance_id}_{fnName}"
         return context.wait_for_result(key)
     
     def tell(self, actorName: str, methodName: str, methodParams: dict):
@@ -261,7 +293,72 @@ class ClusterFunction(Function):
 
         return cluster_function
 
+class ClusterInstance(ActorInstance):
+    def __init__(self, instance):
+        super().__init__(instance)
+    def remote(self, method_name, data: dict):
+        context = Context.create_context()
+        if not hasattr(self._instance, method_name):
+            raise RuntimeError(f"Method {method_name} not found in actor {self._instance.__class__.__name__}")
+        method = getattr(self._instance, method_name)
+        session_id = str(uuid.uuid4())
+        function_id = str(uuid.uuid4())
+        method_name = self._instance.__class__.__name__ + "." + method_name
+        for key, value in data.items():
+            rpc_data = transform_data(data=value)
+            context.send(controller_pb2.Message(
+                type=controller_pb2.MessageType.APPEND_CLASS_METHOD_ARG,
+                append_class_method_arg=controller_pb2.AppendClassMethodArg(
+                    session_id=session_id,
+                    instance_id=self._id,
+                    function_id=function_id,
+                    class_name=self._instance.__class__.__name__,
+                    method_name=method_name,
+                    param_name=key,
+                    value=rpc_data
+                )
+            ))
+        context.send(controller_pb2.Message(
+            type=controller_pb2.MessageType.INVOKE_CLASS_METHOD,
+            invoke_class_method=controller_pb2.InvokeClassMethod(
+                session_id=session_id,
+                instance_id=self._id,
+                function_id=function_id,
+                class_name=self._instance.__class__.__name__,
+                method_name=method_name
+            )
+        ))
+        key = f"{session_id}_{self._id}_{function_id}"
+        data: controller_pb2.Data = context.wait_for_result(key).result()
+        return transform_obj(data)
 
+class ClusterActor(ActorClass):
+    def _get_class_methods(self, instance) -> list[controller_pb2.AppendClass.Method]:
+        methods = []
+        for name, method in inspect.getmembers(instance, predicate=inspect.ismethod):
+            sig = inspect.signature(method)
+            params = sig.parameters.keys()
+            params = list(params)
+            methods.append(controller_pb2.AppendClass.Method(
+                method_name=name,
+                params=params
+            ))
+        return methods
+    def onClassInit(self, instance):
+        context = Context.create_context()
+        class_name = self._config.name
+        class_code = cloudpickle.dumps(instance)
+        cluster_instance = ClusterInstance(instance)
+        message = controller_pb2.Message(
+            type=controller_pb2.MessageType.APPEND_CLASS,
+            append_class=controller_pb2.AppendClass(
+                class_name=class_name,
+                class_code=class_code,
+                methods=self._get_class_methods(instance),
+            )
+        )
+        context.send(message)
+        return cluster_instance
 
 class ClusterExecutor(Executor):
     def __init__(self, dag):
@@ -285,6 +382,32 @@ class ClusterExecutor(Executor):
         self._pending_tasks.append(fut)
         self._map_future_callback[fut] = callback
         self._map_future_params[fut] = (fut, c_node, d_node)
+
+    def _append_function_message(self, session_id: str, instance_id: str, function_name: str, param_name: str, value: controller_pb2.Data) -> controller_pb2.Message:
+        return controller_pb2.Message(
+            type=controller_pb2.MessageType.APPEND_FUNCTION_ARG,
+            append_function_arg=controller_pb2.AppendFunctionArg(
+                session_id=session_id,
+                instance_id=instance_id,
+                function_name=function_name,
+                param_name=param_name,
+                value=value
+            )
+        )
+    
+    def _append_actor_method_message(self, session_id: str, instance_id: str, function_id: str, class_name: str, method_name: str, param_name: str, value: controller_pb2.Data) -> controller_pb2.Message:
+        return controller_pb2.Message(
+            type=controller_pb2.MessageType.APPEND_CLASS_METHOD_ARG,
+            append_class_method_arg=controller_pb2.AppendClassMethodArg(
+                session_id=session_id,
+                instance_id=instance_id,
+                function_id=function_id,
+                class_name=class_name,
+                method_name=method_name,
+                param_name=param_name,
+                value=value
+            )
+        )
 
     def _return_result(self):
         result = None
@@ -342,16 +465,27 @@ class ClusterExecutor(Executor):
                     fn_type = control_node_metadata['functiontype']
                     if fn_type == "remote":
                         rpc_data = transform_data(data=data)
-                        message = controller_pb2.Message(
-                            type=controller_pb2.MessageType.APPEND_FUNCTION_ARG,
-                            append_function_arg=controller_pb2.AppendFunctionArg(
+                        message = None
+                        if isinstance(control_node, ActorNode):
+                            actor_node: ActorNode = control_node
+                            actor_node_metadata = actor_node.metadata()
+                            message = self._append_actor_method_message(
+                                session_id=session_id,
+                                instance_id=actor_node_metadata['objid'],
+                                function_id=control_node_metadata['id'],
+                                class_name=control_node_metadata['classname'],
+                                method_name=control_node_metadata['functionname'],
+                                param_name=params[node._ld.getid()],
+                                value=rpc_data
+                            )
+                        else:
+                            message = self._append_function_message(
                                 session_id=session_id,
                                 instance_id=control_node_metadata['id'],
                                 function_name=control_node_metadata['functionname'],
                                 param_name=params[node._ld.getid()],
                                 value=rpc_data
                             )
-                        )
                         context.send(message)
                     else:
                         data = transform_obj(data)
@@ -360,9 +494,18 @@ class ClusterExecutor(Executor):
                     log.info(f"{control_node.describe()} appargs {node._ld.value}")
                     if control_node.appargs(node._ld):
                         if fn_type == "remote":
-                            control_node._datas['session_id'] = session_id
-                            control_node._datas['instance_id'] = control_node_metadata['id']
-                            control_node._datas['name'] = control_node_metadata['functionname']
+                            if isinstance(control_node, ActorNode):
+                                actor_node: ActorNode = control_node
+                                actor_node_metadata = actor_node.metadata()
+                                actor_node._datas['session_id'] = session_id
+                                actor_node._datas['instance_id'] = actor_node_metadata['objid']
+                                actor_node._datas['function_id'] = actor_node_metadata['id']
+                                actor_node._datas['classname'] = control_node_metadata['classname']
+                                actor_node._datas['name'] = control_node_metadata['functionname']
+                            else:
+                                control_node._datas['session_id'] = session_id
+                                control_node._datas['instance_id'] = control_node_metadata['id']
+                                control_node._datas['name'] = control_node_metadata['functionname']
                         with task_lock:
                             tasks.append(control_node)
             elif isinstance(node, ControlNode):

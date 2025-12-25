@@ -25,15 +25,15 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x63ontroller.proto\x12\ncontroller\x1a\x1bgoogle/protobuf/empty.proto\"\xbc\x01\n\x04\x44\x61ta\x12)\n\x04type\x18\x01 \x01(\x0e\x32\x1b.controller.Data.ObjectType\x12\r\n\x03ref\x18\x02 \x01(\tH\x00\x12\x11\n\x07\x65ncoded\x18\x03 \x01(\x0cH\x00\x12\x0c\n\x04size\x18\x04 \x01(\x03\"O\n\nObjectType\x12\x13\n\x0fOBJ_UNSPECIFIED\x10\x00\x12\x0b\n\x07OBJ_REF\x10\x01\x12\x0f\n\x0bOBJ_ENCODED\x10\x02\x12\x0e\n\nOBJ_STREAM\x10\x03\x42\x08\n\x06Object\"%\n\x03\x41\x63k\x12\x0f\n\x07message\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"d\n\x0e\x41ppendFunction\x12\x15\n\rfunction_name\x18\x01 \x01(\t\x12\x15\n\rfunction_code\x18\x02 \x01(\x0c\x12\x0e\n\x06params\x18\x03 \x03(\t\x12\x14\n\x0crequirements\x18\x04 \x03(\t\"\x88\x01\n\x11\x41ppendFunctionArg\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x15\n\rfunction_name\x18\x03 \x01(\t\x12\x12\n\nparam_name\x18\x04 \x01(\t\x12\x1f\n\x05value\x18\x05 \x01(\x0b\x32\x10.controller.Data\"z\n\x0b\x41ppendClass\x12\x12\n\nclass_name\x18\x01 \x01(\t\x12\x12\n\nclass_code\x18\x02 \x01(\x0c\x12\x14\n\x0crequirements\x18\x03 \x03(\t\x1a-\n\x06Method\x12\x13\n\x0bmethod_name\x18\x01 \x01(\t\x12\x0e\n\x06params\x18\x02 \x03(\t\"\x9d\x01\n\x14\x41ppendClassMethodArg\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x12\n\nclass_name\x18\x03 \x01(\t\x12\x13\n\x0bmethod_name\x18\x04 \x01(\t\x12\x12\n\nparam_name\x18\x05 \x01(\t\x12\x1f\n\x05value\x18\x06 \x01(\x0b\x32\x10.controller.Data\"P\n\x0eInvokeFunction\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x15\n\rfunction_name\x18\x03 \x01(\t\"\x8c\x01\n\x0cReturnResult\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x15\n\rfunction_name\x18\x03 \x01(\t\x12!\n\x05value\x18\x04 \x01(\x0b\x32\x10.controller.DataH\x00\x12\x0f\n\x05\x65rror\x18\x05 \x01(\tH\x00\x42\x08\n\x06result\"\xb0\x03\n\x07Message\x12%\n\x04type\x18\x01 \x01(\x0e\x32\x17.controller.MessageType\x12\x1e\n\x03\x61\x63k\x18\x02 \x01(\x0b\x32\x0f.controller.AckH\x00\x12\x35\n\x0f\x61ppend_function\x18\x03 \x01(\x0b\x32\x1a.controller.AppendFunctionH\x00\x12<\n\x13\x61ppend_function_arg\x18\x04 \x01(\x0b\x32\x1d.controller.AppendFunctionArgH\x00\x12/\n\x0c\x61ppend_class\x18\x05 \x01(\x0b\x32\x17.controller.AppendClassH\x00\x12\x43\n\x17\x61ppend_class_method_arg\x18\x06 \x01(\x0b\x32 .controller.AppendClassMethodArgH\x00\x12\x35\n\x0finvoke_function\x18\x07 \x01(\x0b\x32\x1a.controller.InvokeFunctionH\x00\x12\x31\n\rreturn_result\x18\x08 \x01(\x0b\x32\x18.controller.ReturnResultH\x00\x42\t\n\x07Message*\xa8\x01\n\x0bMessageType\x12\x0f\n\x0bUNSPECIFIED\x10\x00\x12\x07\n\x03\x41\x43K\x10\x01\x12\x13\n\x0f\x41PPEND_FUNCTION\x10\x02\x12\x17\n\x13\x41PPEND_FUNCTION_ARG\x10\x03\x12\x10\n\x0c\x41PPEND_CLASS\x10\x04\x12\x1b\n\x17\x41PPEND_CLASS_METHOD_ARG\x10\x05\x12\x13\n\x0fINVOKE_FUNCTION\x10\x06\x12\r\n\tRT_RESULT\x10\x07\x32\x81\x01\n\x11\x43ontrollerService\x12\x39\n\x07Session\x12\x13.controller.Message\x1a\x13.controller.Message\"\x00(\x01\x30\x01\x12\x31\n\x04Ping\x12\x16.google.protobuf.Empty\x1a\x0f.controller.Ack\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x63ontroller.proto\x12\ncontroller\x1a\x1bgoogle/protobuf/empty.proto\"\xbc\x01\n\x04\x44\x61ta\x12)\n\x04type\x18\x01 \x01(\x0e\x32\x1b.controller.Data.ObjectType\x12\r\n\x03ref\x18\x02 \x01(\tH\x00\x12\x11\n\x07\x65ncoded\x18\x03 \x01(\x0cH\x00\x12\x0c\n\x04size\x18\x04 \x01(\x03\"O\n\nObjectType\x12\x13\n\x0fOBJ_UNSPECIFIED\x10\x00\x12\x0b\n\x07OBJ_REF\x10\x01\x12\x0f\n\x0bOBJ_ENCODED\x10\x02\x12\x0e\n\nOBJ_STREAM\x10\x03\x42\x08\n\x06Object\"%\n\x03\x41\x63k\x12\x0f\n\x07message\x18\x01 \x01(\t\x12\r\n\x05\x65rror\x18\x02 \x01(\t\"d\n\x0e\x41ppendFunction\x12\x15\n\rfunction_name\x18\x01 \x01(\t\x12\x15\n\rfunction_code\x18\x02 \x01(\x0c\x12\x0e\n\x06params\x18\x03 \x03(\t\x12\x14\n\x0crequirements\x18\x04 \x03(\t\"\x88\x01\n\x11\x41ppendFunctionArg\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x15\n\rfunction_name\x18\x03 \x01(\t\x12\x12\n\nparam_name\x18\x04 \x01(\t\x12\x1f\n\x05value\x18\x05 \x01(\x0b\x32\x10.controller.Data\"\x95\x01\n\x0b\x41ppendClass\x12\x12\n\nclass_name\x18\x01 \x01(\t\x12\x12\n\nclass_code\x18\x02 \x01(\x0c\x12/\n\x07methods\x18\x03 \x03(\x0b\x32\x1e.controller.AppendClass.Method\x1a-\n\x06Method\x12\x13\n\x0bmethod_name\x18\x01 \x01(\t\x12\x0e\n\x06params\x18\x02 \x03(\t\"\xb2\x01\n\x14\x41ppendClassMethodArg\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x13\n\x0b\x66unction_id\x18\x03 \x01(\t\x12\x12\n\nclass_name\x18\x04 \x01(\t\x12\x13\n\x0bmethod_name\x18\x05 \x01(\t\x12\x12\n\nparam_name\x18\x06 \x01(\t\x12\x1f\n\x05value\x18\x07 \x01(\x0b\x32\x10.controller.Data\"P\n\x0eInvokeFunction\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x15\n\rfunction_name\x18\x03 \x01(\t\"\x8c\x01\n\x0cReturnResult\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x15\n\rfunction_name\x18\x03 \x01(\t\x12!\n\x05value\x18\x04 \x01(\x0b\x32\x10.controller.DataH\x00\x12\x0f\n\x05\x65rror\x18\x05 \x01(\tH\x00\x42\x08\n\x06result\"z\n\x11InvokeClassMethod\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x13\n\x0b\x66unction_id\x18\x03 \x01(\t\x12\x12\n\nclass_name\x18\x04 \x01(\t\x12\x13\n\x0bmethod_name\x18\x05 \x01(\t\"\xbe\x01\n\x17ReturnClassMethodResult\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x13\n\x0b\x66unction_id\x18\x03 \x01(\t\x12\x12\n\nclass_name\x18\x04 \x01(\t\x12\x13\n\x0bmethod_name\x18\x05 \x01(\t\x12!\n\x05value\x18\x06 \x01(\x0b\x32\x10.controller.DataH\x00\x12\x0f\n\x05\x65rror\x18\x07 \x01(\tH\x00\x42\x08\n\x06result\"\xb9\x04\n\x07Message\x12%\n\x04type\x18\x01 \x01(\x0e\x32\x17.controller.MessageType\x12\x1e\n\x03\x61\x63k\x18\x02 \x01(\x0b\x32\x0f.controller.AckH\x00\x12\x35\n\x0f\x61ppend_function\x18\x03 \x01(\x0b\x32\x1a.controller.AppendFunctionH\x00\x12<\n\x13\x61ppend_function_arg\x18\x04 \x01(\x0b\x32\x1d.controller.AppendFunctionArgH\x00\x12/\n\x0c\x61ppend_class\x18\x05 \x01(\x0b\x32\x17.controller.AppendClassH\x00\x12\x43\n\x17\x61ppend_class_method_arg\x18\x06 \x01(\x0b\x32 .controller.AppendClassMethodArgH\x00\x12\x35\n\x0finvoke_function\x18\x07 \x01(\x0b\x32\x1a.controller.InvokeFunctionH\x00\x12<\n\x13invoke_class_method\x18\x08 \x01(\x0b\x32\x1d.controller.InvokeClassMethodH\x00\x12\x31\n\rreturn_result\x18\t \x01(\x0b\x32\x18.controller.ReturnResultH\x00\x12I\n\x1areturn_class_method_result\x18\n \x01(\x0b\x32#.controller.ReturnClassMethodResultH\x00\x42\t\n\x07Message*\xdd\x01\n\x0bMessageType\x12\x0f\n\x0bUNSPECIFIED\x10\x00\x12\x07\n\x03\x41\x43K\x10\x01\x12\x13\n\x0f\x41PPEND_FUNCTION\x10\x02\x12\x17\n\x13\x41PPEND_FUNCTION_ARG\x10\x03\x12\x10\n\x0c\x41PPEND_CLASS\x10\x04\x12\x1b\n\x17\x41PPEND_CLASS_METHOD_ARG\x10\x05\x12\x13\n\x0fINVOKE_FUNCTION\x10\x06\x12\x17\n\x13INVOKE_CLASS_METHOD\x10\x07\x12\r\n\tRT_RESULT\x10\x08\x12\x1a\n\x16RT_CLASS_METHOD_RESULT\x10\t2\x81\x01\n\x11\x43ontrollerService\x12\x39\n\x07Session\x12\x13.controller.Message\x1a\x13.controller.Message\"\x00(\x01\x30\x01\x12\x31\n\x04Ping\x12\x16.google.protobuf.Empty\x1a\x0f.controller.Ack\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'controller_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_MESSAGETYPE']._serialized_start=1477
-  _globals['_MESSAGETYPE']._serialized_end=1645
+  _globals['_MESSAGETYPE']._serialized_start=1980
+  _globals['_MESSAGETYPE']._serialized_end=2201
   _globals['_DATA']._serialized_start=62
   _globals['_DATA']._serialized_end=250
   _globals['_DATA_OBJECTTYPE']._serialized_start=161
@@ -44,18 +44,22 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_APPENDFUNCTION']._serialized_end=391
   _globals['_APPENDFUNCTIONARG']._serialized_start=394
   _globals['_APPENDFUNCTIONARG']._serialized_end=530
-  _globals['_APPENDCLASS']._serialized_start=532
-  _globals['_APPENDCLASS']._serialized_end=654
-  _globals['_APPENDCLASS_METHOD']._serialized_start=609
-  _globals['_APPENDCLASS_METHOD']._serialized_end=654
-  _globals['_APPENDCLASSMETHODARG']._serialized_start=657
-  _globals['_APPENDCLASSMETHODARG']._serialized_end=814
-  _globals['_INVOKEFUNCTION']._serialized_start=816
-  _globals['_INVOKEFUNCTION']._serialized_end=896
-  _globals['_RETURNRESULT']._serialized_start=899
-  _globals['_RETURNRESULT']._serialized_end=1039
-  _globals['_MESSAGE']._serialized_start=1042
-  _globals['_MESSAGE']._serialized_end=1474
-  _globals['_CONTROLLERSERVICE']._serialized_start=1648
-  _globals['_CONTROLLERSERVICE']._serialized_end=1777
+  _globals['_APPENDCLASS']._serialized_start=533
+  _globals['_APPENDCLASS']._serialized_end=682
+  _globals['_APPENDCLASS_METHOD']._serialized_start=637
+  _globals['_APPENDCLASS_METHOD']._serialized_end=682
+  _globals['_APPENDCLASSMETHODARG']._serialized_start=685
+  _globals['_APPENDCLASSMETHODARG']._serialized_end=863
+  _globals['_INVOKEFUNCTION']._serialized_start=865
+  _globals['_INVOKEFUNCTION']._serialized_end=945
+  _globals['_RETURNRESULT']._serialized_start=948
+  _globals['_RETURNRESULT']._serialized_end=1088
+  _globals['_INVOKECLASSMETHOD']._serialized_start=1090
+  _globals['_INVOKECLASSMETHOD']._serialized_end=1212
+  _globals['_RETURNCLASSMETHODRESULT']._serialized_start=1215
+  _globals['_RETURNCLASSMETHODRESULT']._serialized_end=1405
+  _globals['_MESSAGE']._serialized_start=1408
+  _globals['_MESSAGE']._serialized_end=1977
+  _globals['_CONTROLLERSERVICE']._serialized_start=2204
+  _globals['_CONTROLLERSERVICE']._serialized_end=2333
 # @@protoc_insertion_point(module_scope)

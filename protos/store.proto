@@ -3,6 +3,11 @@ syntax = "proto3";
 import "google/protobuf/empty.proto";
 package store;
 
+enum ObjectType {
+    BYTES = 0;
+    GENERATOR = 1;
+}
+
 message GetObjectRequest {
     string ref = 1; // reference to the object to retrieve
 }
@@ -10,11 +15,13 @@ message GetObjectRequest {
 message GetObjectResponse {
     bytes data = 1; // serialized object data
     string error = 2; // error message, if any
+    ObjectType type = 3; // type of the object being retrieved
 }
 
 message PutObjectRequest {
     bytes data = 1; // serialized object data to store
     string key = 2; // optional key for the object
+    ObjectType type = 3; // type of the object being stored
 }
 
 message DeleteObjectRequest {

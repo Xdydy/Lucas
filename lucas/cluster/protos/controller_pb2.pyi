@@ -17,7 +17,9 @@ class MessageType(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     APPEND_CLASS: _ClassVar[MessageType]
     APPEND_CLASS_METHOD_ARG: _ClassVar[MessageType]
     INVOKE_FUNCTION: _ClassVar[MessageType]
+    INVOKE_CLASS_METHOD: _ClassVar[MessageType]
     RT_RESULT: _ClassVar[MessageType]
+    RT_CLASS_METHOD_RESULT: _ClassVar[MessageType]
 UNSPECIFIED: MessageType
 ACK: MessageType
 APPEND_FUNCTION: MessageType
@@ -25,7 +27,9 @@ APPEND_FUNCTION_ARG: MessageType
 APPEND_CLASS: MessageType
 APPEND_CLASS_METHOD_ARG: MessageType
 INVOKE_FUNCTION: MessageType
+INVOKE_CLASS_METHOD: MessageType
 RT_RESULT: MessageType
+RT_CLASS_METHOD_RESULT: MessageType
 
 class Data(_message.Message):
     __slots__ = ("type", "ref", "encoded", "size")
@@ -84,7 +88,7 @@ class AppendFunctionArg(_message.Message):
     def __init__(self, session_id: _Optional[str] = ..., instance_id: _Optional[str] = ..., function_name: _Optional[str] = ..., param_name: _Optional[str] = ..., value: _Optional[_Union[Data, _Mapping]] = ...) -> None: ...
 
 class AppendClass(_message.Message):
-    __slots__ = ("class_name", "class_code", "requirements")
+    __slots__ = ("class_name", "class_code", "methods")
     class Method(_message.Message):
         __slots__ = ("method_name", "params")
         METHOD_NAME_FIELD_NUMBER: _ClassVar[int]
@@ -94,27 +98,29 @@ class AppendClass(_message.Message):
         def __init__(self, method_name: _Optional[str] = ..., params: _Optional[_Iterable[str]] = ...) -> None: ...
     CLASS_NAME_FIELD_NUMBER: _ClassVar[int]
     CLASS_CODE_FIELD_NUMBER: _ClassVar[int]
-    REQUIREMENTS_FIELD_NUMBER: _ClassVar[int]
+    METHODS_FIELD_NUMBER: _ClassVar[int]
     class_name: str
     class_code: bytes
-    requirements: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, class_name: _Optional[str] = ..., class_code: _Optional[bytes] = ..., requirements: _Optional[_Iterable[str]] = ...) -> None: ...
+    methods: _containers.RepeatedCompositeFieldContainer[AppendClass.Method]
+    def __init__(self, class_name: _Optional[str] = ..., class_code: _Optional[bytes] = ..., methods: _Optional[_Iterable[_Union[AppendClass.Method, _Mapping]]] = ...) -> None: ...
 
 class AppendClassMethodArg(_message.Message):
-    __slots__ = ("session_id", "instance_id", "class_name", "method_name", "param_name", "value")
+    __slots__ = ("session_id", "instance_id", "function_id", "class_name", "method_name", "param_name", "value")
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     INSTANCE_ID_FIELD_NUMBER: _ClassVar[int]
+    FUNCTION_ID_FIELD_NUMBER: _ClassVar[int]
     CLASS_NAME_FIELD_NUMBER: _ClassVar[int]
     METHOD_NAME_FIELD_NUMBER: _ClassVar[int]
     PARAM_NAME_FIELD_NUMBER: _ClassVar[int]
     VALUE_FIELD_NUMBER: _ClassVar[int]
     session_id: str
     instance_id: str
+    function_id: str
     class_name: str
     method_name: str
     param_name: str
     value: Data
-    def __init__(self, session_id: _Optional[str] = ..., instance_id: _Optional[str] = ..., class_name: _Optional[str] = ..., method_name: _Optional[str] = ..., param_name: _Optional[str] = ..., value: _Optional[_Union[Data, _Mapping]] = ...) -> None: ...
+    def __init__(self, session_id: _Optional[str] = ..., instance_id: _Optional[str] = ..., function_id: _Optional[str] = ..., class_name: _Optional[str] = ..., method_name: _Optional[str] = ..., param_name: _Optional[str] = ..., value: _Optional[_Union[Data, _Mapping]] = ...) -> None: ...
 
 class InvokeFunction(_message.Message):
     __slots__ = ("session_id", "instance_id", "function_name")
@@ -140,8 +146,40 @@ class ReturnResult(_message.Message):
     error: str
     def __init__(self, session_id: _Optional[str] = ..., instance_id: _Optional[str] = ..., function_name: _Optional[str] = ..., value: _Optional[_Union[Data, _Mapping]] = ..., error: _Optional[str] = ...) -> None: ...
 
+class InvokeClassMethod(_message.Message):
+    __slots__ = ("session_id", "instance_id", "function_id", "class_name", "method_name")
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    INSTANCE_ID_FIELD_NUMBER: _ClassVar[int]
+    FUNCTION_ID_FIELD_NUMBER: _ClassVar[int]
+    CLASS_NAME_FIELD_NUMBER: _ClassVar[int]
+    METHOD_NAME_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    instance_id: str
+    function_id: str
+    class_name: str
+    method_name: str
+    def __init__(self, session_id: _Optional[str] = ..., instance_id: _Optional[str] = ..., function_id: _Optional[str] = ..., class_name: _Optional[str] = ..., method_name: _Optional[str] = ...) -> None: ...
+
+class ReturnClassMethodResult(_message.Message):
+    __slots__ = ("session_id", "instance_id", "function_id", "class_name", "method_name", "value", "error")
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    INSTANCE_ID_FIELD_NUMBER: _ClassVar[int]
+    FUNCTION_ID_FIELD_NUMBER: _ClassVar[int]
+    CLASS_NAME_FIELD_NUMBER: _ClassVar[int]
+    METHOD_NAME_FIELD_NUMBER: _ClassVar[int]
+    VALUE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    instance_id: str
+    function_id: str
+    class_name: str
+    method_name: str
+    value: Data
+    error: str
+    def __init__(self, session_id: _Optional[str] = ..., instance_id: _Optional[str] = ..., function_id: _Optional[str] = ..., class_name: _Optional[str] = ..., method_name: _Optional[str] = ..., value: _Optional[_Union[Data, _Mapping]] = ..., error: _Optional[str] = ...) -> None: ...
+
 class Message(_message.Message):
-    __slots__ = ("type", "ack", "append_function", "append_function_arg", "append_class", "append_class_method_arg", "invoke_function", "return_result")
+    __slots__ = ("type", "ack", "append_function", "append_function_arg", "append_class", "append_class_method_arg", "invoke_function", "invoke_class_method", "return_result", "return_class_method_result")
     TYPE_FIELD_NUMBER: _ClassVar[int]
     ACK_FIELD_NUMBER: _ClassVar[int]
     APPEND_FUNCTION_FIELD_NUMBER: _ClassVar[int]
@@ -149,7 +187,9 @@ class Message(_message.Message):
     APPEND_CLASS_FIELD_NUMBER: _ClassVar[int]
     APPEND_CLASS_METHOD_ARG_FIELD_NUMBER: _ClassVar[int]
     INVOKE_FUNCTION_FIELD_NUMBER: _ClassVar[int]
+    INVOKE_CLASS_METHOD_FIELD_NUMBER: _ClassVar[int]
     RETURN_RESULT_FIELD_NUMBER: _ClassVar[int]
+    RETURN_CLASS_METHOD_RESULT_FIELD_NUMBER: _ClassVar[int]
     type: MessageType
     ack: Ack
     append_function: AppendFunction
@@ -157,5 +197,7 @@ class Message(_message.Message):
     append_class: AppendClass
     append_class_method_arg: AppendClassMethodArg
     invoke_function: InvokeFunction
+    invoke_class_method: InvokeClassMethod
     return_result: ReturnResult
-    def __init__(self, type: _Optional[_Union[MessageType, str]] = ..., ack: _Optional[_Union[Ack, _Mapping]] = ..., append_function: _Optional[_Union[AppendFunction, _Mapping]] = ..., append_function_arg: _Optional[_Union[AppendFunctionArg, _Mapping]] = ..., append_class: _Optional[_Union[AppendClass, _Mapping]] = ..., append_class_method_arg: _Optional[_Union[AppendClassMethodArg, _Mapping]] = ..., invoke_function: _Optional[_Union[InvokeFunction, _Mapping]] = ..., return_result: _Optional[_Union[ReturnResult, _Mapping]] = ...) -> None: ...
+    return_class_method_result: ReturnClassMethodResult
+    def __init__(self, type: _Optional[_Union[MessageType, str]] = ..., ack: _Optional[_Union[Ack, _Mapping]] = ..., append_function: _Optional[_Union[AppendFunction, _Mapping]] = ..., append_function_arg: _Optional[_Union[AppendFunctionArg, _Mapping]] = ..., append_class: _Optional[_Union[AppendClass, _Mapping]] = ..., append_class_method_arg: _Optional[_Union[AppendClassMethodArg, _Mapping]] = ..., invoke_function: _Optional[_Union[InvokeFunction, _Mapping]] = ..., invoke_class_method: _Optional[_Union[InvokeClassMethod, _Mapping]] = ..., return_result: _Optional[_Union[ReturnResult, _Mapping]] = ..., return_class_method_result: _Optional[_Union[ReturnClassMethodResult, _Mapping]] = ...) -> None: ...

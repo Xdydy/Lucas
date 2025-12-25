@@ -57,7 +57,6 @@ def read_data(dataset: str, name: str):
     def generator():
         for i, x in enumerate(dataset):
             print(x)
-            time.sleep(0.5)
             yield x
             if i > 100:
                 return

@@ -10,6 +10,10 @@ class ActorInstance:
     def __init__(self, instance):
         self._id = str(uuid.uuid4())
         self._instance = instance
+        self._class_name = instance.__class__.__name__
+
+    def get_class_name(self):
+        return self._class_name
 
 class ActorClass:
     def __init__(self, cls, config: ActorConfig):
