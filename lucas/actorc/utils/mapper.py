@@ -30,7 +30,10 @@ def to_proto_append_dag_node_list(dag: DAG, session_id: str = "") -> list[contro
             for lambda_id, param_name in node_data["params"].items():
                 control_node.Params[lambda_id] = str(param_name)
             
-            control_node.Current = node_data["current"]
+            # Current field in protobuf is int32, but metadata["current"] is a dict
+            # The current dict contains prepared parameter data, which is not needed
+            # when sending DAG structure. Set Current to 0 as default.
+            control_node.Current = 0
             # data_node is already an ID string from metadata()
             control_node.DataNode = node_data.get("data_node", "")
             # pre_data_nodes is already a list of ID strings from metadata()
@@ -48,7 +51,13 @@ def to_proto_append_dag_node_list(dag: DAG, session_id: str = "") -> list[contro
             # Create DataNode proto message
             data_node = controller_pb2.DataNode()
             data_node.Id = node_data["id"]
-            data_node.Lambda = node_data["lambda"]
+            # Lambda field in protobuf is string (lambda id), but metadata["lambda"] is a dict
+            # Extract the id from the lambda dict
+            lambda_data = node_data.get("lambda", {})
+            if isinstance(lambda_data, dict):
+                data_node.Lambda = lambda_data.get("id", "")
+            else:
+                data_node.Lambda = str(lambda_data)
             # suf_control_nodes is already a list of ID strings from metadata()
             data_node.SufControlNodes.extend(node_data.get("suf_control_nodes", []))
             # child_node is already a list of ID strings from metadata()

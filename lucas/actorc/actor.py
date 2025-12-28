@@ -10,7 +10,6 @@ from lucas.workflow.dag import DAGNode, DataNode, ControlNode, ActorNode
 from lucas.utils.logging import log
 from protos.common import types_pb2 as common
 from protos.controller import controller_pb2, controller_pb2_grpc
-from .protos import platform_pb2
 from utils import EncDec
 
 from concurrent.futures import Future, wait
@@ -36,8 +35,8 @@ class ActorContext:
             if logger_addr is not None:
                 log.info(f"setup logging to {logger_addr}")
                 setup_logging(log, app_id, logger_addr)
-            actorContext = ActorContext(master_address, app_id)
-        return actorContext
+            ActorContext.actorContext = ActorContext(master_address, app_id)
+        return ActorContext.actorContext
 
     def __init__(self, master_address: str = None, app_id: str = None):
         if master_address is None:
@@ -186,7 +185,7 @@ class ActorFunction(Function):
                     Name=fn_name,
                     Params=self._params,
                     Unikernel=fn.__doc__ or "",
-                    Language=platform_pb2.LANG_PYTHON,
+                    Language=common.LANG_UNIKERNEL,
                     Resources=controller_pb2.Resources(
                         CPU=cpu,
                         Memory=parse_memory_string(memory),
@@ -201,7 +200,7 @@ class ActorFunction(Function):
                     Name=fn_name,
                     Params=self._params,
                     Code=fn.__doc__ or "",
-                    Language=platform_pb2.LANG_GO,
+                    Language=common.LANG_GO,
                     Resources=controller_pb2.Resources(
                         CPU=cpu,
                         Memory=parse_memory_string(memory),
@@ -218,7 +217,7 @@ class ActorFunction(Function):
                     Venv=venv,
                     Requirements=dependcy,
                     PickledObject=cloudpickle.dumps(fn),
-                    Language=platform_pb2.LANG_PYTHON,
+                    Language=common.LANG_PYTHON,
                     Resources=controller_pb2.Resources(
                         CPU=cpu,
                         Memory=parse_memory_string(memory),
