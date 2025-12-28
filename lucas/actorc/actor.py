@@ -10,6 +10,7 @@ from lucas.workflow.dag import DAGNode, DataNode, ControlNode, ActorNode
 from lucas.utils.logging import log
 from protos.common import types_pb2 as common
 from protos.controller import controller_pb2, controller_pb2_grpc
+from .protos import platform_pb2
 from utils import EncDec
 
 from concurrent.futures import Future, wait
@@ -184,7 +185,7 @@ class ActorFunction(Function):
                 AppendUnikernel=controller_pb2.AppendUnikernel(
                     Name=fn_name,
                     Params=self._params,
-                    Unikernel=fn.__doc__,
+                    Unikernel=fn.__doc__ or "",
                     Language=platform_pb2.LANG_PYTHON,
                     Resources=controller_pb2.Resources(
                         CPU=cpu,
@@ -199,6 +200,7 @@ class ActorFunction(Function):
                 AppendGo=controller_pb2.AppendGo(
                     Name=fn_name,
                     Params=self._params,
+                    Code=fn.__doc__ or "",
                     Language=platform_pb2.LANG_GO,
                     Resources=controller_pb2.Resources(
                         CPU=cpu,
