@@ -1,0 +1,1103 @@
+import dill
+import grpc
+import cloudpickle
+import uuid
+import threading
+from lucas.utils.logging import log
+from concurrent import futures
+from .protos import cluster_pb2_grpc, cluster_pb2, controller_pb2, controller_pb2_grpc, store_pb2, store_pb2_grpc, platform_pb2, platform_pb2_grpc
+from .executor import ExecutorSandBox, FunctionExecutor, ClassExecutor
+
+from argparse import ArgumentParser
+from queue import Queue
+from typing import Any, Callable, Generator, List
+from google.protobuf import empty_pb2
+from pympler.asizeof import asizeof
+
+class GrpcOptions:
+    options = [
+        ('grpc.max_send_message_length', 100 * 1024 * 1024),
+        ('grpc.max_receive_message_length', 100 * 1024 * 1024),
+    ]
+    chunk_size = 4 * 1024 * 1024  # 4 MB
+class ControllerContext:
+    def __init__(self, peer_address: str):
+        self._peer_address = peer_address
+        self._channel = grpc.insecure_channel(
+            peer_address,
+            options=GrpcOptions.options
+        )
+        self._stub = controller_pb2_grpc.ControllerServiceStub(self._channel)
+        # store stub to fetch object bytes from remote controller's store service
+        self._msg_queue = Queue()
+        # queue where this ControllerContext will publish incoming controller responses
+        self._outgoing_queue = Queue()
+        self._resp_stream: grpc.Call = self._stub.Session(self._message_generator())
+        self._result_lock = threading.Lock()
+        # map obj_id -> concurrent.futures.Future
+        self._results = {}
+        self._resp_thread = threading.Thread(target=self._receive_messages, daemon=True)
+        self._resp_thread.start()
+        self._test()
+    def _test(self):
+        resp: controller_pb2.Ack = self._stub.Ping(empty_pb2.Empty())
+        log.info(f"Received response from controller: {resp.message}")
+    def _message_generator(self):
+        while True:
+            msg = self._msg_queue.get()
+            if msg is None:
+                break
+            yield msg
+    def send_message(self, msg: controller_pb2.Message):
+        self._msg_queue.put(msg)
+    def _receive_messages(self):
+        try:
+            for response in self._resp_stream:
+                response: controller_pb2.Message
+                if response.type == controller_pb2.MessageType.RT_RESULT:
+                    self._handle_rt_result(response.return_result)
+                elif response.type == controller_pb2.MessageType.ACK:
+                    self._handle_ack(response.ack)
+                else:
+                    log.warning(f"Unknown response type: {response.type}")
+                # publish raw controller message to outgoing queue for master/session forwarding
+                try:
+                    self._outgoing_queue.put(response)
+                except Exception:
+                    log.exception("Failed to put controller response into outgoing queue")
+        except grpc.RpcError as e:
+            log.info("Controller response stream closed by server")
+            self._msg_queue.put(None)
+            self._outgoing_queue.put(None)
+            self._resp_stream.cancel()
+        except Exception as e:
+            log.error(f"Error in controller response stream: {e}")
+
+    def get_outgoing_queue(self):
+        return self._outgoing_queue
+    def _handle_rt_result(self, rt_result: controller_pb2.ReturnResult):
+        log.debug(f"Received runtime result: {rt_result.value}")
+        if rt_result.value.type == controller_pb2.Data.ObjectType.OBJ_REF:
+            obj_id = rt_result.value.ref
+            with self._result_lock:
+                self._results[obj_id] = None  # Placeholder for the result
+        else:
+            log.warning(f"Received non-object result: {rt_result.value}")
+    def _handle_ack(self, ack: controller_pb2.Ack):
+        if ack.error != "":
+            log.error(f"Error in ACK: {ack.error}")
+    def wait_for_result(self, obj_id: str) -> futures.Future:
+        with self._result_lock:
+            if obj_id in self._results:
+                future = futures.Future()
+                future.set_result(self._results[obj_id])
+                return future
+            else:
+                future = futures.Future()
+                self._results[obj_id] = future
+                return future
+
+class StoreContext:
+    def __init__(self, peer_address: str):
+        self._peer_address = peer_address
+        self._channel = grpc.insecure_channel(
+            peer_address,
+            options=GrpcOptions.options
+        )
+        self._stub = store_pb2_grpc.StoreServiceStub(self._channel)
+        self._resp_stream: grpc.Call = self._stub.PublishSession(empty_pb2.Empty())
+        self._subscribe_stream: grpc.Call = self._stub.SubscribeSession(empty_pb2.Empty())
+        self._outgoing_queue = Queue()
+        self._subscribe_outgoing_queue = Queue()
+        self._resp_thread = threading.Thread(target=self._receive_messages, daemon=True)
+        self._subscribe_resp_thread = threading.Thread(target=self._receive_subscribe_messages, daemon=True)
+        self._resp_thread.start()
+        self._subscribe_resp_thread.start()
+
+    def _receive_messages(self):
+        try:
+            for publish in self._resp_stream:
+                self._outgoing_queue.put(publish)
+        except grpc.RpcError as e:
+            log.info("Publish response stream closed by server")
+            self._outgoing_queue.put(None)
+            self._resp_stream.cancel()
+        except Exception as e:
+            log.error(f"Error in publish response stream: {e}")
+
+    def _receive_subscribe_messages(self):
+        try:
+            for publish in self._subscribe_stream:
+                self._subscribe_outgoing_queue.put(publish)
+        except grpc.RpcError as e:
+            log.info("Subscribe response stream closed by server")
+            self._subscribe_outgoing_queue.put(None)
+            self._subscribe_stream.cancel()
+        except Exception as e:
+            log.error(f"Error in subscribe response stream: {e}")
+
+    def get_outgoing_queue(self):
+        return self._outgoing_queue
+    
+    def get_subscribe_outgoing_queue(self):
+        return self._subscribe_outgoing_queue
+
+class StorageService(store_pb2_grpc.StoreServiceServicer):
+    def __init__(self):
+        super().__init__()
+        self._data_store: dict[str, Any] = {}
+        self._publish_obj = Queue()
+        self._subscribe_obj = Queue()
+        self._subscribe_list: dict[str, futures.Future] = {}
+        self._id = None
+
+    def set_id(self, id: str):
+        self._id = id
+    def get_id(self) -> str:
+        return self._id
+
+    def GetObject(self, request, context):
+        request: store_pb2.GetObjectRequest
+        key = request.ref
+        data = self.get(key)
+        if data is None:
+            yield store_pb2.GetObjectResponse(
+                error=f"Object with key {key} not found."
+            )
+            return
+        # Stream the serialized object in chunks to avoid sending a huge
+        # single message. The client will reassemble the bytes and
+        # cloudpickle.loads them.
+        if isinstance(data, Generator):
+            serialized_data = dill.dumps(data)
+            yield store_pb2.GetObjectResponse(
+                data=serialized_data,
+                type=store_pb2.ObjectType.GENERATOR
+            )
+        else:
+            serialized_data = cloudpickle.dumps(data)
+            chunk_size = GrpcOptions.chunk_size  
+            for i in range(0, len(serialized_data), chunk_size):
+                yield store_pb2.GetObjectResponse(
+                    data=serialized_data[i : i + chunk_size],
+                    type=store_pb2.ObjectType.BYTES
+                )
+    
+    def PutObject(self, request_stream, context):
+        key = None
+        buffer = bytearray()
+        obj_type = None
+        for request in request_stream:
+            request: store_pb2.PutObjectRequest
+            if key is None:
+                key = request.key
+            if obj_type is None:
+                obj_type = request.type
+            if request.data:
+                buffer.extend(request.data)
+        if obj_type == store_pb2.ObjectType.GENERATOR:
+            data = dill.loads(bytes(buffer))
+        elif obj_type == store_pb2.ObjectType.BYTES:
+            data = cloudpickle.loads(bytes(buffer))
+        self.put(key, data)
+        self.publish(store_pb2.Publish(ref=key))
+        if key in self._subscribe_list:
+            self._subscribe_list[key].set_result(data)
+        return store_pb2.PutObjectResponse(ref=key)
+    
+    def DeleteObject(self, request, context):
+        request: store_pb2.DeleteObjectRequest
+        success = self.delete(request.ref)
+        return store_pb2.DeleteObjectResponse(success=success)
+    
+    def ClearStore(self, request, context):
+        prefix = request.prefix
+        self.clear(prefix)
+        return store_pb2.ClearStoreResponse()
+    
+    def PublishSession(self, request, context):
+        while True:
+            publish_msg: store_pb2.Publish = self._publish_obj.get()
+            yield publish_msg
+        
+    def SubscribeSession(self, request, context):
+        while True:
+            subscribe_ref = self._subscribe_obj.get()
+            yield store_pb2.Subscribe(ref=subscribe_ref, subscriber_id=self._id)
+    
+    def publish(self, publish_msg: store_pb2.Publish):
+        self._publish_obj.put(publish_msg)
+
+    def subscribe(self, ref: str) -> futures.Future:
+        self._subscribe_obj.put(ref)
+        self._subscribe_list[ref] = futures.Future()
+        return self._subscribe_list[ref]
+    
+    def put(self, key: str, data: Any):
+        self._data_store[key] = data
+        log.info(f"Data stored with key: {key}")
+    def get(self, key: str) -> Any:
+        if key not in self._data_store:
+            return None
+        return self._data_store[key]    
+    def delete(self, key: str) -> bool:
+        if key in self._data_store:
+            del self._data_store[key]
+            log.info(f"Data with key: {key} deleted from store.")
+            return True
+        else:
+            return False
+    
+    def clear(self, prefix: str):
+        if prefix:
+            keys_to_delete = [key for key in self._data_store 
+            if key.startswith(prefix)]
+            for key in keys_to_delete:
+                del self._data_store[key]
+        else:
+            self._data_store.clear()
+
+class Controller(controller_pb2_grpc.ControllerServiceServicer):
+    def __init__(self, store_service: StorageService):
+        self._store_service = store_service
+        self._funcs: dict[str, FunctionExecutor] = {}
+        self._classes: dict[str, ClassExecutor] = {}
+        self._pending_funcs = []
+        self._id = None
+    
+    def set_id(self, id: str):
+        self._id = id
+    def get_id(self) -> str:
+        return self._id
+
+    def _transmit_data(self, data: controller_pb2.Data):
+        data_type = data.type
+        if data_type == controller_pb2.Data.ObjectType.OBJ_REF:
+            obj_id = data.ref
+            if self._store_service.get(obj_id) is None:
+                f = self._store_service.subscribe(obj_id)
+                return f.result()
+            return self._store_service.get(obj_id)
+        elif data_type == controller_pb2.Data.ObjectType.OBJ_ENCODED:
+            obj_data = data.encoded
+            obj = cloudpickle.loads(obj_data)
+            return obj
+    
+    def _transmit_result(self, result, session_id, instance_id, function_name) -> controller_pb2.Data:
+        obj_id = f"{session_id}_{instance_id}_{function_name}"
+        put_data = result
+        if isinstance(result, Generator):
+            put_data = dill.dumps(result)
+        else:
+            put_data = cloudpickle.dumps(result)
+        def request_generator():
+            if isinstance(result, Generator):
+                yield store_pb2.PutObjectRequest(
+                    key=obj_id,
+                    data=put_data,
+                    type=store_pb2.ObjectType.GENERATOR
+                )
+                return
+            for i in range(0, len(put_data), GrpcOptions.chunk_size):
+                yield store_pb2.PutObjectRequest(
+                    key=obj_id,
+                    data=put_data[i : i + GrpcOptions.chunk_size],
+                    type=store_pb2.ObjectType.BYTES
+                )
+        self._store_service.PutObject(request_generator(), None)
+        return controller_pb2.Data(
+            type=controller_pb2.Data.ObjectType.OBJ_REF,
+            ref=obj_id,
+            size=asizeof(put_data)
+        )
+    
+    def _execute_function_impl(self, sanbox: ExecutorSandBox, session_id: str, instance_id: str, function_name: str) -> Any:
+        try:
+            result = sanbox.run()
+            result_data = self._transmit_result(result, session_id, instance_id, function_name)
+            log.info(f"Invoked function: {function_name}")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.RT_RESULT,
+                return_result=controller_pb2.ReturnResult(
+                    value=result_data
+                )
+            )
+        except Exception as e:
+            obj_id = f"{session_id}_{instance_id}_{function_name}"
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    error=f"{obj_id}:{e}"
+                )
+            )
+
+    def _append_function(self, append_fn_request: controller_pb2.AppendFunction) -> controller_pb2.Message:
+        function_name = append_fn_request.function_name
+        function_code = append_fn_request.function_code
+        fn = cloudpickle.loads(function_code)
+        function_params = append_fn_request.params
+        executor = FunctionExecutor(fn, function_params)
+        self._funcs[function_name] = executor
+        log.info(f"Appended function: {function_name}")
+        return controller_pb2.Message(
+            type=controller_pb2.MessageType.ACK,
+            ack=controller_pb2.Ack(
+                message=f"Function {function_name} appended successfully."
+            )
+        )
+    def _append_class(self, append_class_request: controller_pb2.AppendClass) -> controller_pb2.Message:
+        class_name = append_class_request.class_name
+        class_code = append_class_request.class_code
+        cls = cloudpickle.loads(class_code)
+        class_params = append_class_request.methods
+        executor = ClassExecutor(cls, class_params)
+        self._classes[class_name] = executor
+        log.info(f"Appended class: {class_name}")
+        return controller_pb2.Message(
+            type=controller_pb2.MessageType.ACK,
+            ack=controller_pb2.Ack(
+                message=f"Class {class_name} appended successfully."
+            )
+        )
+    def _append_function_arg(self, append_fn_arg_request: controller_pb2.AppendFunctionArg) -> controller_pb2.Message:
+        function_name = append_fn_arg_request.function_name
+        session_id = append_fn_arg_request.session_id
+        instance_id = append_fn_arg_request.instance_id
+        args_data = append_fn_arg_request.value
+        param_name = append_fn_arg_request.param_name
+        if function_name not in self._funcs:
+            log.error(f"Function {function_name} not found.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    error=f"Function {function_name} not found."
+                )
+            )
+        executor = self._funcs[function_name]
+        sandbox = executor.create_instance(f"{session_id}_{instance_id}")
+        data = self._transmit_data(args_data)
+        sandbox.apply_args({param_name: data})
+        log.info(f"Appended args for function: {function_name}, instance: {instance_id}")
+        if sandbox.can_run():
+            return self._execute_function_impl(sandbox, session_id, instance_id, function_name)
+        else:
+            log.info(f"Function {function_name} is not ready to run.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    message=f"Args for function {function_name}, instance {instance_id} appended successfully."
+                )
+            )
+    def _append_class_method_arg(self, append_class_method_arg_request: controller_pb2.AppendClassMethodArg) -> controller_pb2.Message:
+        class_name = append_class_method_arg_request.class_name
+        method_name = append_class_method_arg_request.method_name
+        session_id = append_class_method_arg_request.session_id
+        instance_id = append_class_method_arg_request.instance_id
+        function_id = append_class_method_arg_request.function_id
+        args_data = append_class_method_arg_request.value
+        param_name = append_class_method_arg_request.param_name
+        if class_name not in self._classes:
+            log.error(f"Class {class_name} not found.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    error=f"Class {class_name} not found."
+                )
+            )
+        executor = self._classes[class_name]
+        sandbox = executor.create_instance(f"{session_id}_{instance_id}_{function_id}", method_name)
+        data = self._transmit_data(args_data)
+        sandbox.apply_args({param_name: data})
+        log.info(f"Appended args for class: {class_name}, method: {method_name}, instance: {instance_id}")
+        if sandbox.can_run():
+            return self._execute_function_impl(sandbox, session_id, f"{instance_id}_{function_id}", method_name)
+        else:
+            log.info(f"Method {method_name} of class {class_name} is not ready to run.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    message=f"Args for method {method_name} of class {class_name}, instance {instance_id} appended successfully."
+                )
+            )
+    def _invoke_function(self, invoke_fn_request: controller_pb2.InvokeFunction) -> controller_pb2.Message:
+        function_name = invoke_fn_request.function_name
+        instance_id = invoke_fn_request.instance_id
+        if function_name not in self._funcs:
+            log.error(f"Function {function_name} not found.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    error=f"Function {function_name} not found."
+                )
+            )
+        executor = self._funcs[function_name]
+        sandbox = executor.create_instance(f"{invoke_fn_request.session_id}_{instance_id}")
+        sandbox.set_run()
+        if sandbox.can_run():
+            return self._execute_function_impl(sandbox, invoke_fn_request.session_id, instance_id, function_name)
+        else:
+            log.info(f"Function {function_name} is not ready to run.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    message=f"Function {function_name} is not ready to run."
+                )
+            )
+    def _invoke_class_method(self, invoke_class_method_request: controller_pb2.InvokeClassMethod) -> controller_pb2.Message:
+        class_name = invoke_class_method_request.class_name
+        method_name = invoke_class_method_request.method_name
+        session_id = invoke_class_method_request.session_id
+        instance_id = invoke_class_method_request.instance_id
+        function_id = invoke_class_method_request.function_id
+        if class_name not in self._classes:
+            log.error(f"Class {class_name} not found.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                error=controller_pb2.Ack(
+                    error=f"Class {class_name} not found."
+                )
+            )
+        executor = self._classes[class_name]
+        sandbox = executor.create_instance(f"{session_id}_{instance_id}_{function_id}", method_name)
+        sandbox.set_run()
+        if sandbox.can_run():
+            return self._execute_function_impl(sandbox, session_id, f"{instance_id}_{function_id}", method_name)
+        else:
+            log.info(f"Method {method_name} of class {class_name} is not ready to run.")
+            return controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    message=f"Method {method_name} of class {class_name} is not ready to run."
+                )
+            )
+
+    def apply(self, request) -> controller_pb2.Message:
+        request: controller_pb2.Message
+        log.info(f"Received controller message: {request}")
+        if request.type == controller_pb2.MessageType.APPEND_FUNCTION:
+            resp = self._append_function(request.append_function)
+        elif request.type == controller_pb2.MessageType.APPEND_FUNCTION_ARG:
+            resp = self._append_function_arg(request.append_function_arg)
+        elif request.type == controller_pb2.MessageType.INVOKE_FUNCTION:
+            resp = self._invoke_function(request.invoke_function)
+        elif request.type == controller_pb2.MessageType.APPEND_CLASS:
+            resp = self._append_class(request.append_class)
+        elif request.type == controller_pb2.MessageType.APPEND_CLASS_METHOD_ARG:
+            resp = self._append_class_method_arg(request.append_class_method_arg)
+        elif request.type == controller_pb2.MessageType.INVOKE_CLASS_METHOD:
+            resp = self._invoke_class_method(request.invoke_class_method)
+        else:
+            log.warning(f"Unknown controller message type: {request.type}")
+            resp = controller_pb2.Message(
+                type=controller_pb2.MessageType.ACK,
+                ack=controller_pb2.Ack(
+                    error=f"Unknown message type: {request.type}"
+                )
+            )
+
+        return resp
+    
+    def get_store_service(self):
+        return self._store_service
+    def Session(self, request_iterator, context):
+        for request in request_iterator:
+            resp = self.apply(request)
+            yield resp
+    def Ping(self, request, context):
+        return controller_pb2.Ack(
+            message="Pong")
+
+
+
+class Master(
+    cluster_pb2_grpc.ClusterServiceServicer, 
+    platform_pb2_grpc.PlatformServicer,
+    Controller, 
+    StorageService
+):
+    class Metadata:
+        def __init__(self, host: str, port: int, worker_id: str, rank: int):
+            self._host = host
+            self._port = port
+            self._worker_id = worker_id
+            self._rank = rank
+            self._controller = ControllerContext(f"{host}:{port}")
+            self._store = StoreContext(f"{host}:{port}")
+
+    class StoreProxy:
+        def __init__(self, out_store: StorageService):
+            # map ref -> worker_id
+            self._refs: dict[str, str] = {}
+            self._refs_lock = threading.Lock()
+            self._refs_cond = threading.Condition(lock=self._refs_lock)
+            self._new_worker = Queue()
+        
+            self._listener_threads: List[threading.Thread] = []
+            self._subscriber_workers = set()
+
+            self._running = False
+
+            self._metas: dict[str, Master.Metadata] = {}
+
+            # self._subscribes = Queue()
+            self._subscribes_out = Queue()
+            self._out_store = out_store
+
+        def _request_generator(self, key, data):
+            for i in range(0, len(data), GrpcOptions.chunk_size):
+                yield store_pb2.PutObjectRequest(
+                    key=key,
+                    data=data[i : i + GrpcOptions.chunk_size],
+                    type=store_pb2.ObjectType.BYTES
+                )
+        def _receive_obj(self, msg: store_pb2.GetObjectResponse) -> Any:
+            buffer = bytearray()
+            obj_type = None
+            for resp in msg:
+                if resp.error != "":
+                    log.error(f"Error getting object: {resp.error}")
+                buffer.extend(resp.data)
+                obj_type = resp.type
+            data = None
+            if obj_type == store_pb2.ObjectType.GENERATOR:
+                data = dill.loads(bytes(buffer))
+            else:
+                data = cloudpickle.loads(bytes(buffer))
+            return data
+        
+        def handle_subscribe(self, msg: store_pb2.Subscribe):
+            log.info(f"Handling subscribe for ref: {msg.ref} from subscriber: {msg.subscriber_id}")
+            worker_id: str = None
+            while worker_id is None:
+                with self._refs_cond:
+                    if msg.ref in self._refs:
+                        worker_id = self._refs[msg.ref]
+                    if worker_id is not None:
+                        break
+                    log.info(f"Waiting for ref: {msg.ref} to be published")
+                    self._refs_cond.wait()
+                    log.info(f"Woke up for ref: {msg.ref}")
+            put_data = None
+            if worker_id == "local":
+                data = self._out_store.get(msg.ref)
+                put_data = cloudpickle.dumps(data)
+            else:
+                sub_meta = self._metas[worker_id]
+                channel = grpc.insecure_channel(
+                    f"{sub_meta._host}:{sub_meta._port}",
+                    options=GrpcOptions.options
+                )
+                stub = store_pb2_grpc.StoreServiceStub(channel)
+                request = store_pb2.GetObjectRequest(ref=msg.ref)
+                resp_stream: store_pb2.GetObjectResponse = stub.GetObject(request)
+                obj = self._receive_obj(resp_stream)
+                put_data = cloudpickle.dumps(obj)
+            put_request = self._request_generator(msg.ref, put_data)
+            if msg.subscriber_id == "local":
+                self._out_store.PutObject(put_request, None)
+            else:
+                sub_meta = self._metas[msg.subscriber_id]
+                channel = grpc.insecure_channel(f"{sub_meta._host}:{sub_meta._port}",options=GrpcOptions.options)
+                stub = store_pb2_grpc.StoreServiceStub(channel)
+                stub.PutObject(put_request)
+                # self._out_store.put(msg.ref, cloudpickle.loads(resp.data))
+        
+        def handle_publish(self, ref: str, worker_id: str):
+            log.info(f"Handling publish for ref: {ref} from worker: {worker_id}")
+            with self._refs_cond:
+                self._refs[ref] = worker_id
+                log.info(f"Published ref: {ref} from worker: {worker_id}")
+                log.info(f"{self._refs}")
+                self._refs_cond.notify_all()
+
+        def _spawn_local_session_reader(self):
+            def gen():
+                yield 0
+            def local_store_runner():
+                try:
+                    for resp in self._out_store.SubscribeSession(gen(), None):
+                        self.handle_subscribe(resp)
+                except Exception as e:
+                    log.error(f"Error in local_store_runner: {e}")
+
+            def local_publish():
+                try:
+                    for resp in self._out_store.PublishSession(gen(), None):
+                        self.handle_publish(resp.ref, "local")
+                except Exception as e:
+                    log.error(f"Error in local_publish: {e}")
+            
+            t = threading.Thread(target=local_store_runner, daemon=True)
+            t_publish = threading.Thread(target=local_publish, daemon=True)
+            t.start()
+            t_publish.start()
+            self._listener_threads.append(t)
+            self._listener_threads.append(t_publish)
+        
+        def listen(self):
+            self._running = True
+            def store_listener(wid, meta: Master.Metadata):
+                q = meta._store.get_outgoing_queue()
+                while self._running:
+                    publish_msg: store_pb2.Subscribe = q.get()
+                    if publish_msg is None:
+                        break
+                    # Process the publish_msg as needed
+                    self.handle_publish(publish_msg.ref, wid)
+            
+            def subscriber_listener(wid, meta: Master.Metadata):
+                q = meta._store.get_subscribe_outgoing_queue()
+                while self._running:
+                    subscribe_msg: store_pb2.Subscribe = q.get()
+                    if subscribe_msg is None:
+                        break
+                    # Process the subscribe_msg as needed
+                    self.handle_subscribe(subscribe_msg)
+                    
+
+            
+            def monitor_store():
+                while self._running:
+                    wid, meta = self._new_worker.get()
+                    if wid not in self._subscriber_workers:
+                        self._subscriber_workers.add(wid)
+                        self._metas[wid] = meta
+                        t = threading.Thread(target=store_listener, args=(wid, meta), daemon=True)
+                        t_sub = threading.Thread(target=subscriber_listener, args=(wid, meta), daemon=True)
+                        t.start()
+                        t_sub.start()
+                        self._listener_threads.append(t)
+            
+            self._spawn_local_session_reader()
+            monitor_thread = threading.Thread(target=monitor_store, daemon=True)
+            monitor_thread.start()
+            self._listener_threads.append(monitor_thread)
+
+        def exists(self, ref) -> bool:
+            with self._refs_cond:
+                return ref in self._refs
+        
+        def get_worker_id(self, ref) -> str | None:
+            with self._refs_cond:
+                return self._refs.get(ref, None)
+            
+        def add_worker(self, wid, meta: "Master.Metadata"):
+            self._new_worker.put((wid, meta))
+
+        def clear(self, request: store_pb2.ClearStoreRequest):
+            for meta in self._metas.values():
+                channel = grpc.insecure_channel(f"{meta._host}:{meta._port}")
+                stub = store_pb2_grpc.StoreServiceStub(channel)
+                stub.ClearStore(request)
+            with self._refs_cond:
+                if request.prefix:
+                    keys_to_delete = [key for key in self._refs 
+                    if key.startswith(request.prefix)]
+                    for key in keys_to_delete:
+                        del self._refs[key]
+                else:
+                    self._refs.clear()
+        
+        def shutdown(self):
+            self._running = False
+            for t in self._listener_threads:
+                t.join()
+
+    class ControllerProxy:
+        def __init__(self, out_controller: Controller):
+            self._metas : dict[str, Master.Metadata] = {}
+            self._new_worker = Queue()
+
+            self._listener_threads: List[threading.Thread] = []
+            self._subscriber_workers = set()
+
+            self._running = False
+
+            self._outgoing_q = Queue()
+            self._input = Queue()
+
+            self._out_controller = out_controller
+
+        
+        def _spawn_local_session_reader(self, tag: str = "local"):
+            def gen():
+                while self._running:
+                    msg = self._input.get()
+                    if msg is None or not self._running:
+                        break
+                    yield msg
+            
+            def local_runner():
+                try:
+                    for resp in self._out_controller.Session(gen(), None):
+                        try:
+                            self._outgoing_q.put((tag, resp))
+                        except Exception:
+                            log.exception("Failed to put local session response into outgoing_q")
+                except Exception:
+                    log.exception("local session reader error")
+            
+            t = threading.Thread(target=local_runner, daemon=True)
+            t.start()
+            self._listener_threads.append(t)
+        
+        def submit_local(self, controller_message: controller_pb2.Message):
+            self._input.put(controller_message)
+
+        def broadcast(self, controller_message: controller_pb2.Message):
+            for meta in self._metas.values():
+                meta._controller.send_message(controller_message)
+        
+        def listen(self):
+            self._running = True
+            def worker_listener(meta: Master.Metadata):
+                q = meta._controller.get_outgoing_queue()
+                while self._running:
+                    msg = q.get()
+                    if msg is None:
+                        break
+                    self._outgoing_q.put((meta._worker_id, msg))
+            def monitor_controller():
+                while self._running:
+                    wid, meta = self._new_worker.get()
+                    if wid not in self._subscriber_workers:
+                        self._subscriber_workers.add(wid)
+                        self._metas[wid] = meta
+                        t = threading.Thread(target=worker_listener, args=(meta,), daemon=True)
+                        t.start()
+                        self._listener_threads.append(t)
+            
+            self._spawn_local_session_reader()
+            monitor_thread = threading.Thread(target=monitor_controller, daemon=True)
+            monitor_thread.start()
+            self._listener_threads.append(monitor_thread)
+
+        def is_running(self) -> bool:
+            return self._running
+
+        def get_outgoing_queue(self):
+            return self._outgoing_q
+        
+        def exist_worker(self, worker_id) -> bool:
+            return worker_id in self._metas
+
+        def get_worker(self, worker_id):
+            return self._metas[worker_id]
+        
+        def get_workers(self):
+            return self._metas.values()
+        
+        def remove_worker(self, wid):
+            del self._metas[wid]
+    
+        def add_worker(self, wid, meta: "Master.Metadata"):
+            self._new_worker.put((wid, meta))
+
+        def shutdown(self):
+            self._running = False
+            for t in self._listener_threads:
+                t.join()
+    
+    
+            
+    def __init__(self):
+        StorageService.__init__(self)
+        Controller.__init__(self, self)
+        Controller.set_id(self, "local")
+        StorageService.set_id(self, "local")
+        # self._controllers: dict[str, Master.Metadata] = {}
+        self._store_proxy = Master.StoreProxy(self.get_store_service())
+        self._store_proxy.listen()
+        self._controller_proxy = Master.ControllerProxy(self)
+        self._controller_proxy.listen()
+    
+    def _spawn_local_session_reader(self, outgoing_q: Queue, stop_event: threading.Event, tag: str = "local") -> tuple[threading.Thread, Callable[[controller_pb2.Message], None]]:
+        """Spawn a background thread that runs a single-message Controller.Session locally
+        and pushes any responses into outgoing_q as (tag, controller_message).
+        Returns the Thread object (daemon).
+        """
+
+        input_q = Queue()
+
+        def submit(controller_message: controller_pb2.Message):
+            # submit a single message to the local controller session
+            input_q.put(controller_message)
+
+        def gen():
+            while not stop_event.is_set():
+                msg = input_q.get()
+                # sentinel None => shutdown this local session generator
+                if msg is None or stop_event.is_set():
+                    break
+                yield msg
+
+        def runner():
+            try:
+                # Call the parent Controller.Session to avoid recursing into Master.Session
+                for resp in Controller.Session(self, gen(), None):
+                    try:
+                        outgoing_q.put((tag, resp))
+                    except Exception:
+                        log.exception("Failed to put local session response into outgoing_q")
+            except Exception:
+                log.exception("local session reader error")
+
+        t = threading.Thread(target=runner, daemon=True)
+        t.start()
+        return t, submit
+    
+    def Session(self, request_iterator, context):
+        return super().Session(request_iterator, context)
+
+    def PlatformSession(self, request_iterator, context):
+        """
+        Bidirectional session: accept incoming platform.Messages and forward to controllers (local or worker).
+        Whenever any controller (local or remote) produces a response, convert it to platform.Message
+        (using Ack.message to carry object refs or errors) and yield it back to the client immediately.
+        """
+
+        outgoing_q = self._controller_proxy.get_outgoing_queue()
+        stop_event = threading.Event()
+
+        def request_reader():
+            try:
+                for request in request_iterator:
+                    request: platform_pb2.Message
+                    if request.type == platform_pb2.MessageType.APPLY_TO_WORKER:
+                        req = request.apply_to_worker
+                        worker_id = req.worker_id
+                        controller_message = req.controller_message
+                        if worker_id is None or not self._controller_proxy.exist_worker(worker_id):
+                            # handle locally: spawn a local session reader that will publish responses
+                            try:
+                                self._controller_proxy.submit_local(controller_message)
+                            except Exception as e:
+                                log.exception("Error starting local session reader")
+                                outgoing_q.put(("local", platform_pb2.Message(type=platform_pb2.MessageType.ACK, ack=platform_pb2.Ack(error=str(e)))))
+                        else:
+                            # forward to worker controller asynchronously
+                            meta = self._controller_proxy.get_worker(worker_id)
+                            if meta is not None:
+                                meta._controller.send_message(controller_message)
+                    elif request.type == platform_pb2.MessageType.BROADCAST:
+                        # try to call local broadcast if exists, otherwise send to all controllers
+                        controller_message = request.broadcast.controller_message
+                        try:
+                            self._controller_proxy.submit_local(controller_message)
+                            self._controller_proxy.broadcast(controller_message)
+                        except Exception as e:
+                            log.error(f"Error broadcasting to local and workers: {e}")
+                    else:
+                        log.error(f"Unknown message type received: {request.type}")
+            except grpc.RpcError as e:
+                outgoing_q.put(None)
+                log.info("Session request stream closed by client")
+            except Exception:
+                log.exception("Error reading session requests")
+            finally:
+                stop_event.set()
+
+
+        # start background threads
+        req_thread = threading.Thread(target=request_reader, daemon=True)
+        req_thread.start()
+
+        # main loop: forward controller responses to client as cluster messages
+        try:
+            while not stop_event.is_set():
+                item = outgoing_q.get()
+                if item is None:
+                    break
+                source, ctrl_msg = item
+                # ctrl_msg is a controller_pb2.Message
+                ctrl_msg: controller_pb2.Message
+                try:
+                    yield platform_pb2.Message(
+                        type=platform_pb2.MessageType.RT_RESULT,
+                        return_result=platform_pb2.ReturnResult(
+                            controller_message=ctrl_msg
+                        )
+                    )
+                except Exception:
+                    log.exception("Error converting controller message to cluster message")
+        finally:
+            log.info("Shutting down PlatformSession")
+            stop_event.set()
+            # attempt to join threads briefly
+            req_thread.join()
+            # self.ClearStore(store_pb2.ClearStoreRequest(), None)
+
+    def AddWorkerCommand(self, request, context):
+        return self.addWorker(request)
+    
+
+    
+    def addWorker(self, add_worker_request: cluster_pb2.AddWorker):
+        worker_metadata = Master.Metadata(
+            add_worker_request.host,
+            add_worker_request.port,
+            add_worker_request.worker_id,
+            add_worker_request.worker_rank
+        )
+        self._controller_proxy.add_worker(add_worker_request.worker_id, worker_metadata)
+        self._store_proxy.add_worker(add_worker_request.worker_id, worker_metadata)
+        log.info(f"Worker {add_worker_request.worker_id} added.")
+        return cluster_pb2.Ack(
+            message=f"Worker {add_worker_request.worker_id} added successfully."
+        )
+    def removeWorker(self, remove_worker_request: cluster_pb2.RemoveWorker):
+        if remove_worker_request.worker_id in self._controller_proxy.get_workers():
+            self._controller_proxy.remove_worker(remove_worker_request.worker_id)
+            log.info(f"Worker {remove_worker_request.worker_id} removed.")
+            return cluster_pb2.Ack(
+                message=f"Worker {remove_worker_request.worker_id} removed successfully."
+            )
+        else:
+            log.error(f"Worker {remove_worker_request.worker_id} not found.")
+            return cluster_pb2.Ack(
+                error=f"Worker {remove_worker_request.worker_id} not found."
+            )
+    def getWorkers(self):
+        workers = []
+        for controller in self._controller_proxy.get_workers():
+            worker_id = controller._worker_id
+            host = controller._host
+            port = controller._port
+            rank = controller._rank
+            workers.append(cluster_pb2.AddWorker(
+                host=host,
+                port=port,
+                worker_id=worker_id,
+                worker_rank=rank
+            ))
+        return cluster_pb2.GetWorkersResponse(
+            workers=workers
+        )
+
+    def RemoveWorkerCommand(self, request, context):
+        return self.removeWorker(request)
+    
+    def GetWorkers(self, request, context):
+        return self.getWorkers()
+    
+
+
+    def GetObject(self, request, context):
+        resp_stream = StorageService.GetObject(self, request, context)
+        for resp in resp_stream:
+            if resp.error != "":
+                break
+            yield resp
+        else:
+            return self.get_object(request)
+    
+    def ClearStore(self, request, context):
+        StorageService.ClearStore(self, request, context)
+        self._store_proxy.clear(request)
+        return store_pb2.ClearStoreResponse()
+
+    def get_object(self, request: store_pb2.GetObjectRequest):
+        ref = request.ref
+        if not self._store_proxy.exists(ref):
+            return store_pb2.GetObjectResponse(
+                error=f"Reference {ref} not found."
+            )
+        worker_id = self._store_proxy.get_worker_id(ref)
+        meta = self._controller_proxy.get_worker(worker_id)
+        channel = grpc.insecure_channel(
+            f"{meta._host}:{meta._port}",
+            options=GrpcOptions.options
+        )
+        stub = store_pb2_grpc.StoreServiceStub(channel)
+        resp_stream: store_pb2.GetObjectResponse = stub.GetObject(request)
+        for resp in resp_stream:
+            if resp.error != "":
+                log.error(f"Error getting object: {resp.error}")
+                break
+            yield resp
+        else:
+            yield store_pb2.GetObjectResponse(
+                error=f"Failed to get object {ref} from worker {worker_id}."
+            )
+        
+class Worker(
+    Controller,
+    StorageService
+):
+    def __init__(self, master_address: str, worker_host: str, worker_port: int, rank=1):
+        StorageService.__init__(self)
+        Controller.__init__(self, self)
+        self._worker_id = str(uuid.uuid4())
+        Controller.set_id(self, self._worker_id)
+        StorageService.set_id(self, self._worker_id)
+        self._master_address = master_address
+        self._worker_host = worker_host
+        self._worker_port = worker_port
+        self._rank = rank
+    def connect_to_master(self):
+        self._channel = grpc.insecure_channel(self._master_address)
+        self._stub = cluster_pb2_grpc.ClusterServiceStub(self._channel)
+        # communicate to master
+        resp : cluster_pb2.Ack = self._stub.AddWorkerCommand(cluster_pb2.AddWorker(
+            host=self._worker_host,
+            port=self._worker_port,
+            worker_id=self._worker_id,
+            worker_rank=self._rank
+        ))
+        if resp.error != "":
+            log.error(f"Error adding worker: {resp.error}")
+        else:
+            log.info(resp.message)
+
+    def Session(self, request_iterator, context):
+        return super().Session(request_iterator, context)
+
+
+
+if __name__ == "__main__":
+    arg_parser = ArgumentParser()
+    role_parser = arg_parser.add_subparsers(dest="role", required=True)
+    
+    master_parser = role_parser.add_parser("master", help="Start the master server")
+    worker_parser = role_parser.add_parser("worker", help="Start a worker server")
+
+    master_parser.add_argument("--port", type=int, help="Port for the master server to listen on")
+
+    worker_parser.add_argument("--master_address", type=str, help="Address of the master server", required=True)
+    worker_parser.add_argument("--worker_host", type=str, help="Host for the worker server", required=True)
+    worker_parser.add_argument("--worker_port", type=int, help="Port for the worker server to listen on", required=True)
+    worker_parser.add_argument("--rank", type=int, help="Rank of the worker", default=1)
+
+    args = arg_parser.parse_args()
+    if args.role == "master":
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=10),
+            options=GrpcOptions.options
+        )
+        master = Master()
+        store_pb2_grpc.add_StoreServiceServicer_to_server(master.get_store_service(), server)
+        cluster_pb2_grpc.add_ClusterServiceServicer_to_server(master, server)
+        controller_pb2_grpc.add_ControllerServiceServicer_to_server(master, server)
+        platform_pb2_grpc.add_PlatformServicer_to_server(master, server)
+        server.add_insecure_port(f"[::]:{args.port}")
+        server.start()
+        log.info(f"Master server started on port {args.port}")
+        server.wait_for_termination()
+    elif args.role == "worker":
+        # Worker implementation would go here
+        server = grpc.server(
+            futures.ThreadPoolExecutor(max_workers=10),
+            options=GrpcOptions.options
+        )
+        worker = Worker(
+            master_address=args.master_address,
+            worker_host=args.worker_host,
+            worker_port=args.worker_port,
+            rank=args.rank,
+        )
+        controller_pb2_grpc.add_ControllerServiceServicer_to_server(worker, server)
+        store_pb2_grpc.add_StoreServiceServicer_to_server(worker.get_store_service(), server)
+        server.add_insecure_port(f"[::]:{args.worker_port}")
+        server.start()
+        worker.connect_to_master()
+        server.wait_for_termination()

@@ -1,8 +1,13 @@
 import os
 from typing import Any, Callable, Tuple
+<<<<<<< HEAD
 from utils.memory import parse_memory_string
 from utils.mapper import to_proto_append_dag_node_list
 from utils.logger import setup_logging
+=======
+from .utils.memory import parse_memory_string
+from .utils.mapper import to_proto_dag
+>>>>>>> main
 from lucas import Runtime, Function, ActorClass, ActorInstance
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
@@ -21,24 +26,27 @@ import time
 import inspect
 import threading
 
-actorContext: "ActorContext | None" = None
-
 
 class ActorContext:
+    actorContext: "ActorContext | None" = None
     @staticmethod
     def createContext(master_address: str = None, app_id: str = None):
-        global actorContext
-        if actorContext is None:
+        if ActorContext.actorContext is None:
             if master_address is None:
                 master_address = os.getenv("MASTER_ADDR", "localhost:50051")
             if app_id is None:
                 app_id = os.getenv("APP_ID", None)
+<<<<<<< HEAD
             logger_addr = os.getenv("LOGGER_ADDR", None)
             if logger_addr is not None:
                 log.info(f"setup logging to {logger_addr}")
                 setup_logging(log, app_id, logger_addr)
             actorContext = ActorContext(master_address, app_id)
         return actorContext
+=======
+            ActorContext.actorContext = ActorContext(master_address, app_id)
+        return ActorContext.actorContext
+>>>>>>> main
 
     def __init__(self, master_address: str = None, app_id: str = None):
         if master_address is None:
@@ -137,6 +145,7 @@ class ActorRuntime(Runtime):
         sessionID = fnParams["sessionID"]
         instanceID = fnParams["instanceID"]
         name = fnParams["name"]
+        actorContext = ActorContext.createContext()
         actorContext.send(controller_pb2.Message(
             Type=controller_pb2.CommandType.FR_INVOKE,
             Invoke=controller_pb2.Invoke(
@@ -164,7 +173,9 @@ class ActorFunction(Function):
         self._params = []
         self._instance_id = str(uuid.uuid4())
         super().__init__(fn, config)
+
     def onFunctionInit(self, fn):
+<<<<<<< HEAD
         dependcy = self._config.dependency
         fn_name = self._config.name
         venv = self._config.venv
@@ -213,10 +224,72 @@ class ActorFunction(Function):
                 Tags=tags,
             ),
         )
+=======
+        actorContext = ActorContext.createContext()
+        dependcy = self._config.get('dependency', [])
+        fn_name = self._config.get('name', fn.__name__)
+        venv = self._config.get('venv', None)
+        cpu = self._config.get('cpu', None)
+        memory = self._config.get('memory', None)
+        replicas = self._config.get('replicas', 1)
+        backend = self._config.get('backend', None)    
+
+        message = None
+        sig = inspect.signature(fn)
+        for name, param in sig.parameters.items():
+            self._params.append(name)
+        if backend == "unikernel":
+            message = controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_APPEND_UNIKERNEL,
+                AppendUnikernel=controller_pb2.AppendUnikernel(
+                    Name=fn_name,
+                    Params=self._params,
+                    Unikernel=fn.__doc__,
+                    Language=platform_pb2.LANG_PYTHON,
+                    Resources=controller_pb2.Resources(
+                        CPU=cpu,
+                        Memory=parse_memory_string(memory),
+                    ),
+                    Replicas=replicas,
+                ),
+            )
+        elif backend == "go":
+            message = controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_APPEND_GO,
+                AppendGo=controller_pb2.AppendGo(
+                    Name=fn_name,
+                    Params=self._params,
+                    Language=platform_pb2.LANG_GO,
+                    Resources=controller_pb2.Resources(
+                        CPU=cpu,
+                        Memory=parse_memory_string(memory),
+                    ),
+                    Replicas=replicas,
+                ),
+            )
+        else:
+            message = controller_pb2.Message(
+                Type=controller_pb2.CommandType.FR_APPEND_PY_FUNC,
+                AppendPyFunc=controller_pb2.AppendPyFunc(
+                    Name=fn_name,
+                    Params=self._params,
+                    Venv=venv,
+                    Requirements=dependcy,
+                    PickledObject=cloudpickle.dumps(fn),
+                    Language=platform_pb2.LANG_PYTHON,
+                    Resources=controller_pb2.Resources(
+                        CPU=cpu,
+                        Memory=parse_memory_string(memory),
+                    ),
+                    Replicas=replicas,
+                ),
+            )
+>>>>>>> main
         actorContext.send(message)
 
     def _transformfunction(self, fn):
         def actor_function(args: dict):
+            actorContext = ActorContext.createContext()
             sessionID = str(uuid.uuid4())
             for key, value in args.items():
                 if isinstance(value, controller_pb2.Data):
@@ -265,6 +338,7 @@ class ActorRuntimeInstance(ActorInstance):
     def __init__(self, instance):
         super().__init__(instance)
     def remote(self, method_name, data:dict):
+        actorContext = ActorContext.createContext()
         if not hasattr(self._instance, method_name):
             raise AttributeError(f"Object {self._instance} has no method {method_name}")
         method = getattr(self._instance, method_name)
@@ -333,6 +407,7 @@ class ActorRuntimeClass(ActorClass):
         return methods
 
     def onClassInit(self, instance):
+        actorContext = ActorContext.createContext()
         dependcy = self._config.dependency
         class_name = self._config.name
         instance.__class__.__name__ = class_name
@@ -382,9 +457,31 @@ class ActorExecutor(Executor):
         self._map_future_callback: dict[Future, Callable[[Future], Any]] = {}
         self._map_future_params: dict[Future, Tuple[Future]] = {}
 
+<<<<<<< HEAD
     def _has_pending_tasks(self):
         return len(self._pending_tasks) > 0
     
+=======
+        # send DAG to controller
+        # proto_dag = to_proto_dag(dag)
+        # message = controller_pb2.Message(
+        #     Type=controller_pb2.CommandType.FR_DAG,
+        #     DAG=proto_dag,
+        # )
+        # actorContext.send(message)
+        self._pending_tasks: set[Future] = set()
+        self._map_future_callback: dict[Future, Callable[[Future], Any]] = {}
+        self._map_future_params: dict[Future, Tuple[Future]] = {}
+
+    def _has_pending_tasks(self):
+        return len(self._pending_tasks) > 0
+
+    def _append_pending(self, fut: Future, c_node: ControlNode, d_node: DataNode, callback: Callable[[Future], Any]):
+        self._pending_tasks.add(fut)
+        self._map_future_callback[fut] = callback
+        self._map_future_params[fut] = (fut, c_node, d_node)
+
+>>>>>>> main
     def _pending_callback(self, fut: Future):
         self._pending_tasks.remove(fut)
         if fut in self._map_future_callback:
@@ -393,12 +490,16 @@ class ActorExecutor(Executor):
             callback(*params)
             del self._map_future_callback[fut]
             del self._map_future_params[fut]
+<<<<<<< HEAD
     def _append_pending(self, fut: Future, c_node: ControlNode, d_node: DataNode, callback: Callable[[Future], Any]):
         self._pending_tasks.append(fut)
         self._map_future_callback[fut] = callback
         self._map_future_params[fut] = (fut, c_node, d_node)
+=======
+>>>>>>> main
 
     def _get_real_result(self, data: controller_pb2.Data):
+        actorContext = ActorContext.createContext()
         message = controller_pb2.Message(
             Type = controller_pb2.CommandType.FR_REQUEST_OBJECT,
             RequestObject = controller_pb2.RequestObject(
@@ -412,6 +513,7 @@ class ActorExecutor(Executor):
         return result
 
     def execute(self):
+        actorContext = ActorContext.createContext()
         session_id = str(uuid.uuid4())
         
         # send DAG nodes to controller
@@ -443,9 +545,14 @@ class ActorExecutor(Executor):
                 if len(task) == 0:
                     done, _ = wait(self._pending_tasks, return_when='FIRST_COMPLETED')
                     # _futures = [fut for fut in _futures if not fut.done()]
+<<<<<<< HEAD
                     for future in done:
                         self._pending_callback(future)
                     continue
+=======
+                    for fut in done:
+                        self._pending_callback(fut)
+>>>>>>> main
                 with _task_lock:
                     node = task.pop(0)
                 node._done = True
@@ -529,7 +636,11 @@ class ActorExecutor(Executor):
                             if d_node.is_ready():
                                 with _task_lock:
                                     task.append(d_node)
+<<<<<<< HEAD
                         self._append_pending(result, c_node=node, d_node=r_node, callback=set_datanode_ready)
+=======
+                        self._append_pending(result, node, r_node, set_datanode_ready)
+>>>>>>> main
                     else:
                         r_node.set_value(result)
                         r_node.set_ready()

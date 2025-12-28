@@ -4,7 +4,11 @@ import grpc
 import warnings
 
 
+<<<<<<< HEAD:lucas/actorc/protos/common/logger_pb2_grpc.py
 GRPC_GENERATED_VERSION = '1.76.0'
+=======
+GRPC_GENERATED_VERSION = '1.75.0'
+>>>>>>> main:lucas/actorc/protos/actor_pb2_grpc.py
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

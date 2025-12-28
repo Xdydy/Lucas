@@ -102,5 +102,33 @@ class WorkflowContext:
                 self.set_runtime(rt)
                 return self._wf.execute()
             return actor_workflow_export_func
+        elif self._provider == 'cluster':
+            from lucas import routeBuilder
+            from lucas.serverless_function import Metadata
+            from lucas.cluster.client import ClusterRuntime
+            def cluster_workflow_export_func(data: dict = None):
+                if data is None:
+                    data = {}
+                route = routeBuilder.build()
+                route_dict = {}
+                for function in route.functions:
+                    route_dict[function.name] = function.handler
+                for workflow in route.workflows:
+                    route_dict[workflow.name] = workflow
+                for actor in route.actors:
+                    route_dict[actor.name] = actor._cls
+                metadata = Metadata(
+                    id=str(uuid.uuid4()),
+                    params=data,
+                    namespace=None,
+                    router=route_dict,
+                    request_type="invoke",
+                    redis_db=None,
+                    producer=None
+                )
+                rt = ClusterRuntime(metadata)
+                self.set_runtime(rt)
+                return self._wf.execute()
+            return cluster_workflow_export_func
         else:
             raise NotImplementedError(f"provider {self._provider} is not supported yet")

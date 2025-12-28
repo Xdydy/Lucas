@@ -2,6 +2,7 @@ from typing import Any, TYPE_CHECKING, List
 from importlib import import_module
 import uuid
 from .utils import get_item_func
+import cloudpickle
 if TYPE_CHECKING:
     from .dag import DataNode,ControlNode
     from .workflow import Workflow
@@ -18,6 +19,24 @@ class Lambda:
         self._dataNode: "DataNode" = None
         self.canIter = False
         self.workflow_:"Workflow" = None
+
+    @staticmethod
+    def loads(metadata: dict) -> "Lambda":
+        ld = Lambda()
+        ld._id = metadata['id']
+        ld.value = cloudpickle.loads(bytes.fromhex(metadata['value']))
+        return ld
+    
+    def loads(self, metadata: dict) -> "Lambda":
+        self._id = metadata['id']
+        self.value = cloudpickle.loads(bytes.fromhex(metadata['value']))
+        return self
+    
+    def dumps(self) -> dict:
+        return {
+            'id': self._id,
+            'value': cloudpickle.dumps(self.value).hex()
+        }
 
     def getid(self):
         return self._id

@@ -1,15 +1,14 @@
 #!/bin/bash
 
 PROTOC="python -m grpc_tools.protoc"
-export PATH="$PATH:$HOME/go/bin"
 
 # ACTOR_SRC=$(go list -f {{.Dir}} github.com/asynkron/protoactor-go/actor)
 # ACTOR_PROTO=$ACTOR_SRC/actor.proto
 
 PROTOC="$PROTOC -I ."
-PROTO_SRC="*.proto ./executor/*.proto ./controller/*.proto ./cluster/*.proto"
+PROTO_SRC="*.proto"
 
-PY_OUTPUTS="../lucas/actorc/protos"
+PY_OUTPUTS="../lucas/cluster/protos"
 
 
 for PY_OUTPUT in $PY_OUTPUTS; do

@@ -13,7 +13,6 @@ from .workflow import Workflow,Route,RouteBuilder,RouteRunner,WorkflowContext,Ro
 from typing import Callable, Any
 import inspect
 from ._private import (
-    FunctionConfig,
     LocalFunction,
     AliyunFunction,
     KnativeFunction,
@@ -74,7 +73,7 @@ def durable(*args, **kwargs) -> Function:
         fn_name = kwargs.get('name', fn.__name__)
         cpu = kwargs.get('cpu', 0.5)
         memory = kwargs.get('memory', 128)
-        fn_config = FunctionConfig(provider=provider, cpu=cpu, memory=memory, name=fn_name)
+        fn_config = dict(kwargs)
         func = DurableFunction(fn, fn_config)
         routeBuilder.func(fn_name).set_handler(func.export())
         return func
@@ -94,9 +93,17 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
         fn_name = kwargs.get('name', fn.__name__)
         cpu = kwargs.get('cpu', 1)
         memory = kwargs.get('memory', 128)
-        
+        dependency = kwargs.get('dependency', [])
+
+        kwargs.update({
+            'provider': provider,
+            'name': fn_name,
+            'cpu': cpu,
+            'memory': memory,
+            'dependency': dependency
+        })
         func_cls = kwargs.get('wrapper', None)
-        fn_config = FunctionConfig(**kwargs)
+        fn_config = dict(kwargs)
         if provider == 'local':
             func = LocalFunction(fn, fn_config)
         elif provider == 'aliyun':
@@ -105,6 +112,12 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
             func = KnativeFunction(fn, fn_config)
         elif provider == 'local-once':
             func = LocalOnceFunction(fn, fn_config)
+        elif provider == "actor":
+            from lucas.actorc.actor import ActorFunction
+            func = ActorFunction(fn, fn_config)
+        elif provider == 'cluster':
+            from lucas.cluster.client import ClusterFunction
+            func = ClusterFunction(fn, fn_config)
         else:
             assert func_cls != None, "wrapper is required for custom runtime"
             assert issubclass(func_cls, Function), "wrapper must be subclass of Function"
@@ -119,12 +132,15 @@ def function(*args, **kwargs) -> Union[Function, Callable[[Callable[..., Any]], 
         
 def actor(*args, **kwargs)-> ActorClass | Callable[[type], ActorClass]:
     def __actor(cls) -> ActorClass:
+        config = get_function_container_config()
         class_name = kwargs.get('name', cls.__name__)
         kwargs.setdefault('name', class_name)
         actorConfig = ActorConfig(**kwargs)
         class_cls = kwargs.get('wrapper', None)
-        if class_cls is None:
-            class_cls = ActorClass
+        provider = config['provider']
+        if provider == 'cluster':
+            from lucas.cluster.client import ClusterActor
+            class_cls = ClusterActor
         actor_class = class_cls(cls, actorConfig)
         return actor_class
     if len(args) == 1 and len(kwargs) == 0:

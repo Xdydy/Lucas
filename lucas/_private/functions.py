@@ -1,14 +1,10 @@
 from ..serverless_function import Metadata
 
-class FunctionConfig:
-    def __init__(self, *args, **options):
-        for key, value in options.items():
-            setattr(self, key, value)
-        pass
 
 class Function:
-    def __init__(self, fn, config: FunctionConfig = None):
-        self._config = config
+    def __init__(self, fn, config = None):
+        self._config: dict = config
+        self._origin_fn = fn
         self._fn = self._transformfunction(fn)
         self.onFunctionInit(fn)
 
@@ -32,7 +28,7 @@ class MulFunction:
     
 
 class LocalFunction(Function):
-    def __init__(self, fn, config: FunctionConfig=None):
+    def __init__(self, fn, config=None):
         super().__init__(fn, config)
 
     def _transformfunction(self, fn):
@@ -43,7 +39,7 @@ class LocalFunction(Function):
         return local_function
 
 class AliyunFunction(Function):
-    def __init__(self, fn, config: FunctionConfig=None):
+    def __init__(self, fn, config=None):
         super().__init__(fn, config)
     def _transformfunction(self, fn):
         def aliyun_function(arg0, arg1):
@@ -53,7 +49,7 @@ class AliyunFunction(Function):
         return aliyun_function
 
 class KnativeFunction(Function):
-    def __init__(self, fn, config: FunctionConfig = None):
+    def __init__(self, fn, config=None):
         super().__init__(fn, config)
     def _transformfunction(self, fn):
         def kn_function(md: Metadata):
@@ -63,7 +59,7 @@ class KnativeFunction(Function):
         return kn_function
     
 class LocalOnceFunction(Function):
-    def __init__(self, fn, config: FunctionConfig = None):
+    def __init__(self, fn, config=None):
         super().__init__(fn, config)
     def _transformfunction(self, fn):
         def localonce_function(data: dict):

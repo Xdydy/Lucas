@@ -5,7 +5,11 @@ import warnings
 
 import controller_pb2 as ignis_dot_controller_dot_controller__pb2
 
+<<<<<<< HEAD
 GRPC_GENERATED_VERSION = '1.76.0'
+=======
+GRPC_GENERATED_VERSION = '1.75.0'
+>>>>>>> main
 GRPC_VERSION = grpc.__version__
 _version_not_supported = False
 

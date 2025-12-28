@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+package store;
+
+enum ObjectType {
+    BYTES = 0;
+    GENERATOR = 1;
+}
+
+message GetObjectRequest {
+    string ref = 1; // reference to the object to retrieve
+}
+
+message GetObjectResponse {
+    bytes data = 1; // serialized object data
+    string error = 2; // error message, if any
+    ObjectType type = 3; // type of the object being retrieved
+}
+
+message PutObjectRequest {
+    bytes data = 1; // serialized object data to store
+    string key = 2; // optional key for the object
+    ObjectType type = 3; // type of the object being stored
+}
+
+message DeleteObjectRequest {
+    string ref = 1; // reference to the object to delete
+}
+
+message DeleteObjectResponse {
+    bool success = 1; // whether the deletion was successful
+    string error = 2; // error message, if any
+}
+
+/**
+* Request to clear the entire store.
+*/
+message ClearStoreRequest {
+    string prefix = 1; // optional prefix to clear specific objects
+}
+
+message ClearStoreResponse {
+    string error = 1; // error message, if any
+}
+
+message PutObjectResponse {
+    string ref = 1; // reference to the stored object
+    string error = 2; // error message, if any
+}
+
+message Publish {
+    string ref = 1;
+}
+
+message Subscribe {
+    string ref = 1;
+    string subscriber_id = 2;
+}
+
+
+service StoreService {
+    rpc GetObject(GetObjectRequest) returns (stream GetObjectResponse) {}
+    rpc PutObject(stream PutObjectRequest) returns (PutObjectResponse) {}
+    // Delete an object from the store.
+    rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse) {}
+    // Clear the entire store.
+    rpc ClearStore(ClearStoreRequest) returns (ClearStoreResponse) {}
+    // Publish is a server-streaming RPC: client sends an empty request and the server
+    // continuously streams `Publish` messages (worker_id + ref) to the client.
+    rpc PublishSession(google.protobuf.Empty) returns (stream Publish) {}
+    rpc SubscribeSession(google.protobuf.Empty) returns (stream Subscribe) {}
+}

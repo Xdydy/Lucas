@@ -1,5 +1,5 @@
 from typing import Callable, Dict, Any, List
-from lucas import function, workflow, Workflow, actor
+from lucas import function, workflow, Workflow, actor, ActorClass
 from lucas._private.functions import Function, FunctionConfig
 from datasets import Dataset
 import time
@@ -194,62 +194,138 @@ class TrainerPipeline:
             return model
         return training_pipeline_workflow
 
+def load_data(chunk_no, path, worker_num):
+    # 按照 worker 切分数据, chunk_no 表示第几块分片
+    with open(path, "r") as f:
+        lines = f.readlines()
+    datas = []
+    for line in lines:
+        parts = line.strip().split("\t")
+        x = [float(v) for v in parts[0].strip("[]").split(",")]
+        y = [float(v) for v in parts[1].strip("[]").split(",")]
+        datas.append((x, y))
+    # 切分数据
+    chunk_size = len(datas) // worker_num
+    start_index = chunk_no * chunk_size
+    if chunk_no == worker_num - 1:
+        end_index = len(datas)
+    else:
+        end_index = start_index + chunk_size
+    return datas[start_index:end_index]
 class ParameterServer:
-    def __init__(self, evaluate_func: Function):
-        self._evaluate_func = evaluate_func
-        self._datas = None
+    def __init__(self, train_func: ActorClass):
+        self._train_func = train_func
+        self._data_path = None
         self._metrics = None
         self._function_wrapper = None
         self._provider = None
-    def load_data(self, data):
-        self._datas = data
+        self._worker_num = 1
+    def load_data(self, path):
+        self._data_path = path
     def store(self, metrics):
         self._metrics = metrics
     def evaluate(self):
-        if self._datas is None:
+        if self._data_path is None:
             raise ValueError("No data loaded for evaluation")
         if self._evaluate_func is None:
             raise ValueError("No evaluation function provided")
-        self._metrics = self._evaluate_func(self._datas)
+        self._metrics = self._evaluate_func(self._data_path)
         return self._metrics
     def set_function_wrapper(self, wrapper):
         self._function_wrapper = wrapper
     def set_provider(self, provider):
         self._provider = provider
+    def set_worker_num(self, num: int):
+        self._worker_num = num
+
+    def generate_ps_func(self):
+        # 1. 生成参数名称列表
+        params_name = [f"x{i}" for i in range(self._worker_num)]
+        # 2. 创建参数对象列表
+        parameters = []
+        for name in params_name:
+            # 创建参数对象
+            param = inspect.Parameter(
+                name=name,
+                kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=float,  # 类型注解
+                default=inspect.Parameter.empty  # 无默认值
+            )
+            parameters.append(param)
+        # 3. 创建函数签名
+        sig = inspect.Signature(parameters=parameters)
+        
+        # 4. 构建函数体字符串
+        # 计算平均值的核心逻辑
+        param_str = ", ".join(params_name)
+        # 使用 exec 创建函数
+        func_name = f"ps"
+        func_code = f"""
+def {func_name}({param_str}):
+    import torch
+    worker_results = [{param_str}]
+    print(worker_results)
+    
+    # 初始化一个空的梯度字典
+    aggregated_gradients = {{}}
+
+    # 遍历每个 worker 的结果
+    for result in worker_results:
+        gradients = result["gradients"]
+        for param_name, grad_value in gradients.items():
+            if param_name not in aggregated_gradients:
+                # 如果参数名不存在，初始化为零张量
+                aggregated_gradients[param_name] = torch.zeros_like(torch.tensor(grad_value))
+            # 累加梯度
+            aggregated_gradients[param_name] += torch.tensor(grad_value)
+
+    # 计算平均梯度
+    num_workers = len(worker_results)
+    for param_name in aggregated_gradients:
+        aggregated_gradients[param_name] /= num_workers
+
+    return {{"gradients": {{k: v.tolist() for k, v in aggregated_gradients.items()}}}}
+    """
+        
+        # 执行代码创建函数
+        namespace = {}
+        exec(func_code, namespace)
+        func = namespace[func_name]
+        
+        # 5. 应用动态生成的签名
+        func.__signature__ = sig
+        
+        return func
+
+
     def export(self, executor):
-        if self._evaluate_func is None:
-            raise ValueError("No evaluation function provided")
-        if self._datas is None:
+        if self._train_func is None:
+            raise ValueError("No training function provided")
+        if self._data_path is None:
             raise ValueError("No data loaded for evaluation")
-        if self._function_wrapper is None:
-            raise ValueError("No function wrapper set for evaluation function")
-        if self._provider is None:
-            raise ValueError("No provider set for evaluation function")
-        evaluate_func = self._evaluate_func.export()
-        @function(
-            wrapper=self._function_wrapper,
-            dependency=[],
-            provider=self._provider,
-            name="load_data",
-            venv="default"
-        )
-        def load_data(ds):
-            def generate_data():
-                for x, y in self._datas:
-                    yield {
-                        "x": x,
-                        "y": y
-                    }
-            return generate_data()
-        load_data_fn = load_data.export()
+        # if self._function_wrapper is None:
+            # raise ValueError("No function wrapper set for evaluation function")
+        # if self._provider is None:
+            # raise ValueError("No provider set for evaluation function")
+        
+        load_data_fn = function(load_data)
+        ps_func = self.generate_ps_func()
+        ps_func = function(ps_func)
         
         @workflow(executor=executor)
         def parameter_server_workflow(wf: Workflow):
-            dataset = wf.call(load_data._config.name, {"ds":"ds"})
-            params = self._fetch_function_signature(evaluate_func)
-            dict_params = {param: dataset for param in params}
-            metric = wf.call(self._evaluate_func._config.name, dict_params)
-            return metric
+            obj = self._train_func.export()
+            metric_params = {}
+            for i in range(self._worker_num):
+                dataset = wf.call("load_data", {"chunk_no": i, "path": self._data_path, "worker_num": self._worker_num})
+                # 调用训练任务，获得梯度
+                metric = wf.call_method(obj, "train_func", {"dataset": dataset})
+                metric_params[f"x{i}"] = metric
+            result = wf.call("ps", metric_params)
+            # 将聚合后的梯度传递给训练对象，更新模型参数
+            for i in range(self._worker_num):
+                wf.call_method(obj, "update_model", {"gradients": result})
+            return result
 
         return parameter_server_workflow
 

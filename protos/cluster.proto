@@ -1,0 +1,34 @@
+syntax = "proto3";
+package cluster;
+
+message Ack {
+    string message = 1; // acknowledgment message
+    string error = 2; // error message, if any
+}
+
+message AddWorker {
+    string worker_id = 1; // unique worker ID
+    string host = 2; // worker host
+    int32 port = 3; // worker port
+    int32 worker_rank = 4; // worker rank
+}
+
+message RemoveWorker {
+    string worker_id = 1; // unique worker ID
+}
+
+message GetWorkersRequest {
+    // No fields needed for this request
+}
+
+message GetWorkersResponse {
+    repeated AddWorker workers = 1; // list of workers
+}
+
+
+
+service ClusterService {
+    rpc AddWorkerCommand(AddWorker) returns (Ack) {}
+    rpc RemoveWorkerCommand(RemoveWorker) returns (Ack) {}
+    rpc GetWorkers(GetWorkersRequest) returns (GetWorkersResponse) {}
+}
