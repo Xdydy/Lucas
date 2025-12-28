@@ -1,13 +1,8 @@
 import os
 from typing import Any, Callable, Tuple
-<<<<<<< HEAD
 from utils.memory import parse_memory_string
 from utils.mapper import to_proto_append_dag_node_list
 from utils.logger import setup_logging
-=======
-from .utils.memory import parse_memory_string
-from .utils.mapper import to_proto_dag
->>>>>>> main
 from lucas import Runtime, Function, ActorClass, ActorInstance
 from lucas.serverless_function import Metadata
 from lucas.workflow.executor import Executor
@@ -36,17 +31,12 @@ class ActorContext:
                 master_address = os.getenv("MASTER_ADDR", "localhost:50051")
             if app_id is None:
                 app_id = os.getenv("APP_ID", None)
-<<<<<<< HEAD
             logger_addr = os.getenv("LOGGER_ADDR", None)
             if logger_addr is not None:
                 log.info(f"setup logging to {logger_addr}")
                 setup_logging(log, app_id, logger_addr)
             actorContext = ActorContext(master_address, app_id)
         return actorContext
-=======
-            ActorContext.actorContext = ActorContext(master_address, app_id)
-        return ActorContext.actorContext
->>>>>>> main
 
     def __init__(self, master_address: str = None, app_id: str = None):
         if master_address is None:
@@ -175,56 +165,6 @@ class ActorFunction(Function):
         super().__init__(fn, config)
 
     def onFunctionInit(self, fn):
-<<<<<<< HEAD
-        dependcy = self._config.dependency
-        fn_name = self._config.name
-        venv = self._config.venv
-        cpu = None
-        memory = None
-        try:
-            cpu = self._config.cpu
-        except AttributeError:
-            cpu = None
-        try:
-            memory = self._config.memory
-        except AttributeError:
-            memory = None
-        try:
-            gpu = self._config.gpu
-        except AttributeError:
-            gpu = None
-        try:
-            replicas = self._config.replicas
-        except AttributeError:
-            replicas = 1
-        try:
-            tags = self._config.tags
-        except AttributeError:
-            tags = []
-        if tags is None:
-            tags = []
-        sig = inspect.signature(fn)
-        for name, param in sig.parameters.items():
-            self._params.append(name)
-        message = controller_pb2.Message(
-            Type=controller_pb2.CommandType.FR_APPEND_PY_FUNC,
-            AppendPyFunc=controller_pb2.AppendPyFunc(
-                Name=fn_name,
-                Params=self._params,
-                Venv=venv,
-                Requirements=dependcy,
-                PickledObject=cloudpickle.dumps(fn),
-                Language=common.LANG_PYTHON,
-                Resources=controller_pb2.Resources(
-                    CPU=cpu,
-                    Memory=parse_memory_string(memory),
-                    GPU=gpu,
-                ),
-                Replicas=replicas,
-                Tags=tags,
-            ),
-        )
-=======
         actorContext = ActorContext.createContext()
         dependcy = self._config.get('dependency', [])
         fn_name = self._config.get('name', fn.__name__)
@@ -284,7 +224,6 @@ class ActorFunction(Function):
                     Replicas=replicas,
                 ),
             )
->>>>>>> main
         actorContext.send(message)
 
     def _transformfunction(self, fn):
@@ -457,11 +396,6 @@ class ActorExecutor(Executor):
         self._map_future_callback: dict[Future, Callable[[Future], Any]] = {}
         self._map_future_params: dict[Future, Tuple[Future]] = {}
 
-<<<<<<< HEAD
-    def _has_pending_tasks(self):
-        return len(self._pending_tasks) > 0
-    
-=======
         # send DAG to controller
         # proto_dag = to_proto_dag(dag)
         # message = controller_pb2.Message(
@@ -481,7 +415,6 @@ class ActorExecutor(Executor):
         self._map_future_callback[fut] = callback
         self._map_future_params[fut] = (fut, c_node, d_node)
 
->>>>>>> main
     def _pending_callback(self, fut: Future):
         self._pending_tasks.remove(fut)
         if fut in self._map_future_callback:
@@ -490,13 +423,6 @@ class ActorExecutor(Executor):
             callback(*params)
             del self._map_future_callback[fut]
             del self._map_future_params[fut]
-<<<<<<< HEAD
-    def _append_pending(self, fut: Future, c_node: ControlNode, d_node: DataNode, callback: Callable[[Future], Any]):
-        self._pending_tasks.append(fut)
-        self._map_future_callback[fut] = callback
-        self._map_future_params[fut] = (fut, c_node, d_node)
-=======
->>>>>>> main
 
     def _get_real_result(self, data: controller_pb2.Data):
         actorContext = ActorContext.createContext()
@@ -545,14 +471,8 @@ class ActorExecutor(Executor):
                 if len(task) == 0:
                     done, _ = wait(self._pending_tasks, return_when='FIRST_COMPLETED')
                     # _futures = [fut for fut in _futures if not fut.done()]
-<<<<<<< HEAD
-                    for future in done:
-                        self._pending_callback(future)
-                    continue
-=======
                     for fut in done:
                         self._pending_callback(fut)
->>>>>>> main
                 with _task_lock:
                     node = task.pop(0)
                 node._done = True
@@ -636,11 +556,7 @@ class ActorExecutor(Executor):
                             if d_node.is_ready():
                                 with _task_lock:
                                     task.append(d_node)
-<<<<<<< HEAD
-                        self._append_pending(result, c_node=node, d_node=r_node, callback=set_datanode_ready)
-=======
                         self._append_pending(result, node, r_node, set_datanode_ready)
->>>>>>> main
                     else:
                         r_node.set_value(result)
                         r_node.set_ready()
