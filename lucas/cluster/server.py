@@ -169,11 +169,11 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
         # single message. The client will reassemble the bytes and
         # cloudpickle.loads them.
         if isinstance(data, Generator):
-            serialized_data = dill.dumps(data)
-            yield store_pb2.GetObjectResponse(
-                data=serialized_data,
-                type=store_pb2.ObjectType.GENERATOR
-            )
+            for chunk in data:
+                yield store_pb2.GetObjectResponse(
+                    data=cloudpickle.dumps(chunk),
+                    type=store_pb2.ObjectType.GENERATOR
+                )
         else:
             serialized_data = cloudpickle.dumps(data)
             chunk_size = GrpcOptions.chunk_size  
@@ -195,10 +195,7 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
                 obj_type = request.type
             if request.data:
                 buffer.extend(request.data)
-        if obj_type == store_pb2.ObjectType.GENERATOR:
-            data = dill.loads(bytes(buffer))
-        elif obj_type == store_pb2.ObjectType.BYTES:
-            data = cloudpickle.loads(bytes(buffer))
+        data = cloudpickle.loads(bytes(buffer))
         self.put(key, data)
         self.publish(store_pb2.Publish(ref=key))
         if key in self._subscribe_list:
@@ -287,24 +284,20 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         obj_id = f"{session_id}_{instance_id}_{function_name}"
         put_data = result
         if isinstance(result, Generator):
-            put_data = dill.dumps(result)
+            put_data = result
         else:
             put_data = cloudpickle.dumps(result)
         def request_generator():
-            if isinstance(result, Generator):
-                yield store_pb2.PutObjectRequest(
-                    key=obj_id,
-                    data=put_data,
-                    type=store_pb2.ObjectType.GENERATOR
-                )
-                return
             for i in range(0, len(put_data), GrpcOptions.chunk_size):
                 yield store_pb2.PutObjectRequest(
                     key=obj_id,
                     data=put_data[i : i + GrpcOptions.chunk_size],
                     type=store_pb2.ObjectType.BYTES
                 )
-        self._store_service.PutObject(request_generator(), None)
+        if not isinstance(result, Generator):
+            self._store_service.PutObject(request_generator(), None)
+        else :
+            self._store_service.put(obj_id, result)
         return controller_pb2.Data(
             type=controller_pb2.Data.ObjectType.OBJ_REF,
             ref=obj_id,

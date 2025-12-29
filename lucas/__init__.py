@@ -149,7 +149,7 @@ def actor(*args, **kwargs)-> ActorClass | Callable[[type], ActorClass]:
     else:
         return __actor
 
-def workflow(*args, **kwargs) -> WorkflowContext:
+def workflow(*args, **kwargs) -> Union[WorkflowContext, Callable[[Callable[..., Any]], WorkflowContext]]:
     def __workflow(fn) -> WorkflowContext:
         config = get_function_container_config()
         provider = kwargs.get('provider', config['provider'])

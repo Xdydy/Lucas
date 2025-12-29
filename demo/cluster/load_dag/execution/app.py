@@ -11,7 +11,6 @@ context = Context.create_context()
 
 @function
 def funca(a) -> int:
-    time.sleep(3)
     return a
 
 @function
@@ -20,12 +19,10 @@ def funcb(a) -> int:
         flag = int(f.read().strip())
     if flag == 0:
         raise RuntimeError("Simulated function failure")
-    time.sleep(5)
     return a
 
 @function
 def add(a: int, b: int) -> int:
-    time.sleep(2)
     return a + b
 
 @workflow(executor = ClusterExecutor)

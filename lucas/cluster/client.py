@@ -245,9 +245,9 @@ class ClusterFunction(Function):
         super().__init__(fn, config)
     
     def onFunctionInit(self, fn):
-        function_name = self._config.name
+        function_name = self._config['name']
         function_code = cloudpickle.dumps(fn)
-        dependcy = self._config.dependency
+        dependcy = self._config['dependency']
         params = inspect.signature(fn).parameters
         for param in params:
             self._params.append(param)
