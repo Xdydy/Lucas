@@ -12,10 +12,12 @@ class Language(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     LANG_JSON: _ClassVar[Language]
     LANG_GO: _ClassVar[Language]
     LANG_PYTHON: _ClassVar[Language]
+    LANG_UNIKERNEL: _ClassVar[Language]
 LANG_UNKNOWN: Language
 LANG_JSON: Language
 LANG_GO: Language
 LANG_PYTHON: Language
+LANG_UNIKERNEL: Language
 
 class ObjectRef(_message.Message):
     __slots__ = ("ID", "Source")

@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x63ommon/types.proto\x12\x06\x63ommon\"\'\n\tObjectRef\x12\n\n\x02ID\x18\x01 \x01(\t\x12\x0e\n\x06Source\x18\x02 \x01(\t\"o\n\rEncodedObject\x12\n\n\x02ID\x18\x01 \x01(\t\x12\x0c\n\x04\x44\x61ta\x18\x02 \x01(\x0c\x12\x0e\n\x06Source\x18\x03 \x01(\t\x12\"\n\x08Language\x18\x04 \x01(\x0e\x32\x10.common.Language\x12\x10\n\x08IsStream\x18\x05 \x01(\x08\"q\n\x0bStreamChunk\x12\x10\n\x08ObjectID\x18\x01 \x01(\t\x12\x0e\n\x06Offset\x18\x02 \x01(\x03\x12\x0b\n\x03\x45oS\x18\x03 \x01(\x08\x12$\n\x05Value\x18\x04 \x01(\x0b\x32\x15.common.EncodedObject\x12\r\n\x05\x45rror\x18\x05 \x01(\t*I\n\x08Language\x12\x10\n\x0cLANG_UNKNOWN\x10\x00\x12\r\n\tLANG_JSON\x10\x01\x12\x0b\n\x07LANG_GO\x10\x02\x12\x0f\n\x0bLANG_PYTHON\x10\x03\x42\x31Z/github.com/9triver/iarnet/internal/proto/commonb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x63ommon/types.proto\x12\x06\x63ommon\"\'\n\tObjectRef\x12\n\n\x02ID\x18\x01 \x01(\t\x12\x0e\n\x06Source\x18\x02 \x01(\t\"o\n\rEncodedObject\x12\n\n\x02ID\x18\x01 \x01(\t\x12\x0c\n\x04\x44\x61ta\x18\x02 \x01(\x0c\x12\x0e\n\x06Source\x18\x03 \x01(\t\x12\"\n\x08Language\x18\x04 \x01(\x0e\x32\x10.common.Language\x12\x10\n\x08IsStream\x18\x05 \x01(\x08\"q\n\x0bStreamChunk\x12\x10\n\x08ObjectID\x18\x01 \x01(\t\x12\x0e\n\x06Offset\x18\x02 \x01(\x03\x12\x0b\n\x03\x45oS\x18\x03 \x01(\x08\x12$\n\x05Value\x18\x04 \x01(\x0b\x32\x15.common.EncodedObject\x12\r\n\x05\x45rror\x18\x05 \x01(\t*]\n\x08Language\x12\x10\n\x0cLANG_UNKNOWN\x10\x00\x12\r\n\tLANG_JSON\x10\x01\x12\x0b\n\x07LANG_GO\x10\x02\x12\x0f\n\x0bLANG_PYTHON\x10\x03\x12\x12\n\x0eLANG_UNIKERNEL\x10\x04\x42\x31Z/github.com/9triver/iarnet/internal/proto/commonb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,7 +33,7 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z/github.com/9triver/iarnet/internal/proto/common'
   _globals['_LANGUAGE']._serialized_start=299
-  _globals['_LANGUAGE']._serialized_end=372
+  _globals['_LANGUAGE']._serialized_end=392
   _globals['_OBJECTREF']._serialized_start=30
   _globals['_OBJECTREF']._serialized_end=69
   _globals['_ENCODEDOBJECT']._serialized_start=71
