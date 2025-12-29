@@ -565,10 +565,11 @@ class ActorExecutor(Executor):
                         if r_node.is_ready():
                             with _task_lock:
                                 task.append(r_node)
-                
-                with open("dag.json", 'w') as f:
-                    import json
-                    f.write(json.dumps(self.dag.metadata(fn_export=False), indent=2))
+
+                # TODO: fix cloudpickle 不可以序列化 protobuf 对象
+                # with open("dag.json", 'w') as f:
+                #     import json
+                #     f.write(json.dumps(self.dag.metadata(fn_export=False), indent=2))
             if _end:
                 break
         result = None
