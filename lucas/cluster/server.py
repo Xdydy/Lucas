@@ -493,9 +493,38 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
     def get_store_service(self):
         return self._store_service
     def Session(self, request_iterator, context):
-        for request in request_iterator:
-            resp = self.apply(request)
-            yield resp
+        _futures: set[futures.Future] = set()
+        executor = futures.ThreadPoolExecutor(max_workers=8)
+        stop_event = threading.Event()
+        def request_reader():
+            try:
+                for request in request_iterator:
+                    f = executor.submit(self.apply, request)
+                    _futures.add(f)
+            except grpc.RpcError as e:
+                log.info("Controller request stream closed by client")
+            finally:
+                stop_event.set()
+        request_thread = threading.Thread(target=request_reader, daemon=True)
+        request_thread.start()
+        try:
+            while not stop_event.is_set():
+                done, _ = futures.wait(
+                    _futures,
+                    timeout=1,
+                    return_when=futures.FIRST_COMPLETED
+                )
+                for f in done:
+                    _futures.remove(f)
+                    response: controller_pb2.Message = f.result()
+                    yield response
+        except Exception as e:
+            log.error(f"Error in Controller Session: {e}")
+        finally:
+            request_thread.join()
+            executor.shutdown(wait=True)
+
+
     def Ping(self, request, context):
         return controller_pb2.Ack(
             message="Pong")

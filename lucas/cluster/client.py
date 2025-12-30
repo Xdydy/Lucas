@@ -18,6 +18,7 @@ import time
 import inspect
 import threading
 import os
+import json
 
 class Context:
     context: "Context | None" = None
@@ -542,7 +543,6 @@ class ClusterExecutor(Executor):
                         with task_lock:
                             tasks.append(r_node)
         if not self.dag.hasDone():
-            import json
             with open('dag.json', 'w') as f:
                 f.write(json.dumps(self.dag.metadata(), indent=2))
             with open('session', 'w') as f:
