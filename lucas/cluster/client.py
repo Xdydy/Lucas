@@ -8,7 +8,7 @@ from lucas.utils.logging import log
 from .protos import platform_pb2, platform_pb2_grpc, store_pb2, store_pb2_grpc, controller_pb2
 from .scheduler import Scheduler
 
-from concurrent.futures import Future, wait, FIRST_COMPLETED
+from concurrent.futures import Future, wait, FIRST_COMPLETED, _base
 from queue import Queue
 from pympler.asizeof import asizeof
 import cloudpickle
@@ -71,24 +71,32 @@ class Context:
         if rt_result.value.type == controller_pb2.Data.ObjectType.OBJ_REF:
             obj_id = rt_result.value.ref
             with self._result_lock:
-                if obj_id in self._result:
-                    self._result[obj_id].set_result(rt_result.value)
-                else:
-                    f = Future()
-                    f.set_result(rt_result.value)
-                    self._result[obj_id] = f
+                try:
+                    if obj_id in self._result:
+                        self._result[obj_id].set_result(rt_result.value)
+                    else:
+                        f = Future()
+                        f.set_result(rt_result.value)
+                        self._result[obj_id] = f
+                except _base.InvalidStateError as e:
+                    log.error(f"Future for {obj_id} is already completed.")
+                    raise e
     
     def _handle_controller_rt_classmethod_result(self, class_method_result: controller_pb2.ReturnClassMethodResult):
         log.debug(f"Received class method result: {class_method_result.value}")
         if class_method_result.value.type == controller_pb2.Data.ObjectType.OBJ_REF:
             obj_id = class_method_result.value.ref
             with self._result_lock:
-                if obj_id in self._result:
-                    self._result[obj_id].set_result(class_method_result.value)
-                else:
-                    f = Future()
-                    f.set_result(class_method_result.value)
-                    self._result[obj_id] = f
+                try:
+                    if obj_id in self._result:
+                        self._result[obj_id].set_result(class_method_result.value)
+                    else:
+                        f = Future()
+                        f.set_result(class_method_result.value)
+                        self._result[obj_id] = f
+                except _base.InvalidStateError as e:
+                    log.error(f"Future for {obj_id} is already completed.")
+                    raise e
     
     def _handle_controller_error(self, error: str):
         # Handle error accordingly
@@ -96,13 +104,16 @@ class Context:
         message = error.split(":")[1]
         log.error(f"Received controller error: {message}")
         with self._result_lock:
-            if obj_id in self._result:
-                self._result[obj_id].set_result(RuntimeError(message))
-            else:
-                f = Future()
-                f.set_result(RuntimeError(message))
-                self._result[obj_id] = f
-
+            try:
+                if obj_id in self._result:
+                    self._result[obj_id].set_result(RuntimeError(message))
+                else:
+                    f = Future()
+                    f.set_result(RuntimeError(message))
+                    self._result[obj_id] = f
+            except _base.InvalidStateError as e:
+                log.error(f"Future for {obj_id} is already completed.")
+                raise e
 
     def _handle_controller_response(self, controller_message: controller_pb2.Message):
         log.debug(f"Received controller response: {controller_message}")
@@ -266,6 +277,7 @@ class ClusterFunction(Function):
     def _transformfunction(self, fn):
         def cluster_function(args: dict):
             session_id = str(uuid.uuid4())
+            instance_id = str(uuid.uuid4())
             context = Context.create_context()
             for key, value in args.items():
                 rpc_data = transform_data(data=value)
@@ -273,7 +285,7 @@ class ClusterFunction(Function):
                     type=controller_pb2.MessageType.APPEND_FUNCTION_ARG,
                     append_function_arg=controller_pb2.AppendFunctionArg(
                         session_id=session_id,
-                        instance_id=session_id,
+                        instance_id=instance_id,
                         function_name=fn.__name__,
                         param_name=key,
                         value=rpc_data
@@ -283,11 +295,11 @@ class ClusterFunction(Function):
                 type=controller_pb2.MessageType.INVOKE_FUNCTION,
                 invoke_function=controller_pb2.InvokeFunction(
                     session_id=session_id,
-                    instance_id=session_id,
+                    instance_id=instance_id,
                     function_name=fn.__name__,
                 )
             ))
-            key = f"{session_id}_{session_id}_{fn.__name__}"
+            key = f"{session_id}_{instance_id}_{fn.__name__}"
             data: controller_pb2.Data = context.wait_for_result(key).result()
             return transform_obj(data)
 

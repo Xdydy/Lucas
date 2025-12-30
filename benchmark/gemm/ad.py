@@ -8,40 +8,47 @@ import json
 
 context = Context.create_context()
 matrix_size = 256
-batch_size = 128
+batch_size = 16
+matrixA = [[1.0 for _ in range(matrix_size)] for _ in range(matrix_size)]
+matrixB = [[1.0 for _ in range(matrix_size)] for _ in range(matrix_size)]
 @function
 def compute(matrixA: list[list], matrixB: list[list]) -> list:
     result = []
     for i in range(len(matrixA)):
         row = []
+        time.sleep(0.00001)
         for j in range(len(matrixB[0])):
+            time.sleep(0.00001)
             sum = 0
             for k in range(len(matrixB)):
                 sum += matrixA[i][k] * matrixB[k][j]
             row.append(sum)
         result.append(row)
+    # time.sleep(1)
     return result
 
 @function
-def merge(a: list[list], b: list[list]) -> list:
-    result = []
-    for row_a, row_b in zip(a, b):
-        merged_row = [x + y for x, y in zip(row_a, row_b)]
-        result.append(merged_row)
-    return result
+def splitA(i):
+    return matrixA[i * batch_size:(i + 1) * batch_size]
+
+@function
+def splitB(j):
+    return [row[j * batch_size:(j + 1) * batch_size] for row in matrixB]
 
 @workflow(executor=ClusterExecutor)
 def gemm(wf:Workflow):
-    matrixA = [[1.0 for _ in range(matrix_size)] for _ in range(matrix_size)]
-    matrixB = [[1.0 for _ in range(matrix_size)] for _ in range(matrix_size)]
     results = []
+    sub_matrix_as = []
+    sub_matrix_bs = []
+    for i in range(matrix_size // batch_size):
+        sub_matrix_as.append(wf.call("splitA", {"i": i}))
+        sub_matrix_bs.append(wf.call("splitB", {"j": i}))
     for i in range(matrix_size // batch_size):
         for j in range(matrix_size // batch_size):
-            # 分割矩阵: A矩阵的第i个batch，B矩阵的第j个batch
-            sub_matrix_a = matrixA[j * (matrix_size // batch_size):(j + 1) * (matrix_size // batch_size)]
-            sub_matrix_b = [row[i * (matrix_size // batch_size):(i + 1) * (matrix_size // batch_size)] for row in matrixB]
-            c = wf.call("compute", {"matrixA": sub_matrix_a, "matrixB": sub_matrix_b})
-            results.append(c)
+            a = sub_matrix_as[i]
+            b = sub_matrix_bs[j]
+            result = wf.call("compute", {"matrixA": a, "matrixB": b})
+            results.append(result)
     # while len(results) > 1:
     #     merged_results = []
     #     for i in range(0, len(results), 2):

@@ -145,6 +145,7 @@ class StoreContext:
 class StorageService(store_pb2_grpc.StoreServiceServicer):
     def __init__(self):
         super().__init__()
+        self._data_store_lock = threading.Lock()
         self._data_store: dict[str, Any] = {}
         self._publish_obj = Queue()
         self._subscribe_obj = Queue()
@@ -231,12 +232,14 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
         return self._subscribe_list[ref]
     
     def put(self, key: str, data: Any):
-        self._data_store[key] = data
+        with self._data_store_lock:
+            self._data_store[key] = data
         log.info(f"Data stored with key: {key}")
     def get(self, key: str) -> Any:
-        if key not in self._data_store:
-            return None
-        return self._data_store[key]    
+        with self._data_store_lock:
+            if key not in self._data_store:
+                return None
+            return self._data_store[key]    
     def delete(self, key: str) -> bool:
         if key in self._data_store:
             del self._data_store[key]
@@ -257,8 +260,12 @@ class StorageService(store_pb2_grpc.StoreServiceServicer):
 class Controller(controller_pb2_grpc.ControllerServiceServicer):
     def __init__(self, store_service: StorageService):
         self._store_service = store_service
+
+        self._funcs_lock = threading.Lock()
         self._funcs: dict[str, FunctionExecutor] = {}
+        self._classes_lock = threading.Lock()
         self._classes: dict[str, ClassExecutor] = {}
+        self._pending_funcs_lock = threading.Lock()
         self._pending_funcs = []
         self._id = None
     
@@ -308,7 +315,7 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         try:
             result = sanbox.run()
             result_data = self._transmit_result(result, session_id, instance_id, function_name)
-            log.info(f"Invoked function: {function_name}")
+            log.info(f"Invoked function: {session_id}_{instance_id}_{function_name}")
             return controller_pb2.Message(
                 type=controller_pb2.MessageType.RT_RESULT,
                 return_result=controller_pb2.ReturnResult(
@@ -330,7 +337,8 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         fn = cloudpickle.loads(function_code)
         function_params = append_fn_request.params
         executor = FunctionExecutor(fn, function_params)
-        self._funcs[function_name] = executor
+        with self._funcs_lock:
+            self._funcs[function_name] = executor
         log.info(f"Appended function: {function_name}")
         return controller_pb2.Message(
             type=controller_pb2.MessageType.ACK,
@@ -344,7 +352,8 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         cls = cloudpickle.loads(class_code)
         class_params = append_class_request.methods
         executor = ClassExecutor(cls, class_params)
-        self._classes[class_name] = executor
+        with self._classes_lock:
+            self._classes[class_name] = executor
         log.info(f"Appended class: {class_name}")
         return controller_pb2.Message(
             type=controller_pb2.MessageType.ACK,
@@ -366,21 +375,23 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
                     error=f"Function {function_name} not found."
                 )
             )
-        executor = self._funcs[function_name]
-        sandbox = executor.create_instance(f"{session_id}_{instance_id}")
+        with self._funcs_lock:
+            executor = self._funcs[function_name]
+            sandbox = executor.create_instance(f"{session_id}_{instance_id}")
         data = self._transmit_data(args_data)
         sandbox.apply_args({param_name: data})
         log.info(f"Appended args for function: {function_name}, instance: {instance_id}")
-        if sandbox.can_run():
-            return self._execute_function_impl(sandbox, session_id, instance_id, function_name)
-        else:
-            log.info(f"Function {function_name} is not ready to run.")
-            return controller_pb2.Message(
-                type=controller_pb2.MessageType.ACK,
-                ack=controller_pb2.Ack(
-                    message=f"Args for function {function_name}, instance {instance_id} appended successfully."
+        with sandbox.lock():
+            if sandbox.can_run():
+                return self._execute_function_impl(sandbox, session_id, instance_id, function_name)
+            else:
+                log.info(f"Function {function_name} is not ready to run.")
+                return controller_pb2.Message(
+                    type=controller_pb2.MessageType.ACK,
+                    ack=controller_pb2.Ack(
+                        message=f"Args for function {function_name}, instance {instance_id} appended successfully."
+                    )
                 )
-            )
     def _append_class_method_arg(self, append_class_method_arg_request: controller_pb2.AppendClassMethodArg) -> controller_pb2.Message:
         class_name = append_class_method_arg_request.class_name
         method_name = append_class_method_arg_request.method_name
@@ -397,8 +408,9 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
                     error=f"Class {class_name} not found."
                 )
             )
-        executor = self._classes[class_name]
-        sandbox = executor.create_instance(f"{session_id}_{instance_id}_{function_id}", method_name)
+        with self._classes_lock:
+            executor = self._classes[class_name]
+            sandbox = executor.create_instance(f"{session_id}_{instance_id}_{function_id}", method_name)
         data = self._transmit_data(args_data)
         sandbox.apply_args({param_name: data})
         log.info(f"Appended args for class: {class_name}, method: {method_name}, instance: {instance_id}")
@@ -423,19 +435,21 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
                     error=f"Function {function_name} not found."
                 )
             )
-        executor = self._funcs[function_name]
-        sandbox = executor.create_instance(f"{invoke_fn_request.session_id}_{instance_id}")
-        sandbox.set_run()
-        if sandbox.can_run():
-            return self._execute_function_impl(sandbox, invoke_fn_request.session_id, instance_id, function_name)
-        else:
-            log.info(f"Function {function_name} is not ready to run.")
-            return controller_pb2.Message(
-                type=controller_pb2.MessageType.ACK,
-                ack=controller_pb2.Ack(
-                    message=f"Function {function_name} is not ready to run."
+        with self._funcs_lock:
+            executor = self._funcs[function_name]
+            sandbox = executor.create_instance(f"{invoke_fn_request.session_id}_{instance_id}")
+            sandbox.set_run()
+        with sandbox.lock():
+            if sandbox.can_run():
+                return self._execute_function_impl(sandbox, invoke_fn_request.session_id, instance_id, function_name)
+            else:
+                log.info(f"Function {function_name} is not ready to run.")
+                return controller_pb2.Message(
+                    type=controller_pb2.MessageType.ACK,
+                    ack=controller_pb2.Ack(
+                        message=f"Function {function_name} is not ready to run."
+                    )
                 )
-            )
     def _invoke_class_method(self, invoke_class_method_request: controller_pb2.InvokeClassMethod) -> controller_pb2.Message:
         class_name = invoke_class_method_request.class_name
         method_name = invoke_class_method_request.method_name
@@ -450,19 +464,21 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
                     error=f"Class {class_name} not found."
                 )
             )
-        executor = self._classes[class_name]
-        sandbox = executor.create_instance(f"{session_id}_{instance_id}_{function_id}", method_name)
-        sandbox.set_run()
-        if sandbox.can_run():
-            return self._execute_function_impl(sandbox, session_id, f"{instance_id}_{function_id}", method_name)
-        else:
-            log.info(f"Method {method_name} of class {class_name} is not ready to run.")
-            return controller_pb2.Message(
-                type=controller_pb2.MessageType.ACK,
-                ack=controller_pb2.Ack(
-                    message=f"Method {method_name} of class {class_name} is not ready to run."
+        with self._classes_lock:
+            executor = self._classes[class_name]
+            sandbox = executor.create_instance(f"{session_id}_{instance_id}_{function_id}", method_name)
+            sandbox.set_run()
+        with sandbox.lock():
+            if sandbox.can_run():
+                return self._execute_function_impl(sandbox, session_id, f"{instance_id}_{function_id}", method_name)
+            else:
+                log.info(f"Method {method_name} of class {class_name} is not ready to run.")
+                return controller_pb2.Message(
+                    type=controller_pb2.MessageType.ACK,
+                    ack=controller_pb2.Ack(
+                        message=f"Method {method_name} of class {class_name} is not ready to run."
+                    )
                 )
-            )
 
     def apply(self, request) -> controller_pb2.Message:
         request: controller_pb2.Message
@@ -494,13 +510,15 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         return self._store_service
     def Session(self, request_iterator, context):
         _futures: set[futures.Future] = set()
+        _lock = threading.Lock()
         executor = futures.ThreadPoolExecutor(max_workers=8)
         stop_event = threading.Event()
         def request_reader():
             try:
                 for request in request_iterator:
                     f = executor.submit(self.apply, request)
-                    _futures.add(f)
+                    with _lock:
+                        _futures.add(f)
             except grpc.RpcError as e:
                 log.info("Controller request stream closed by client")
             finally:
@@ -509,15 +527,15 @@ class Controller(controller_pb2_grpc.ControllerServiceServicer):
         request_thread.start()
         try:
             while not stop_event.is_set():
-                done, _ = futures.wait(
-                    _futures,
-                    timeout=1,
-                    return_when=futures.FIRST_COMPLETED
-                )
-                for f in done:
-                    _futures.remove(f)
-                    response: controller_pb2.Message = f.result()
-                    yield response
+                with _lock:
+                    try:
+                        done, _futures = futures.wait(_futures, timeout=0.1, return_when=futures.ALL_COMPLETED)
+                        # out = futures.as_completed(_futures, timeout=0.1)
+                    except futures.TimeoutError:
+                        continue
+                    for f in done:
+                        response: controller_pb2.Message = f.result()
+                        yield response
         except Exception as e:
             log.error(f"Error in Controller Session: {e}")
         finally:
