@@ -103,7 +103,7 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                 if obj_id in self._data_obj:
                     value = self._data_obj[obj_id]
                     response = controller_pb2.Message(
-                        Type=controller_pb2.CommandType.FR_RESPONSE_OBJECT,
+                        Type=controller_pb2.CommandType.BK_RESPONSE_OBJECT,
                         ResponseObject=controller_pb2.ResponseObject(
                             ID=obj_id,
                             Value=EncDec.encode(value, language=platform_pb2.Language.LANG_PYTHON)
@@ -111,7 +111,7 @@ class GRPCServer(controller_pb2_grpc.ServiceServicer):
                     )
                 else:
                     response = controller_pb2.Message(
-                        Type=controller_pb2.CommandType.FR_RESPONSE_OBJECT,
+                        Type=controller_pb2.CommandType.BK_RESPONSE_OBJECT,
                         ResponseObject=controller_pb2.ResponseObject(
                             ID=obj_id,
                             Value=EncDec.encode(None)

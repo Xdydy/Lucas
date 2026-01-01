@@ -1,12 +1,12 @@
+import os
+os.environ['provider'] = 'cluster'
 from lucas import workflow, function, Workflow, actor
 from lucas.serverless_function import Metadata
 from lucas.train.trainer import ParameterServer
-from lucas.actorc.actor import (
-    ActorContext,
-    ActorFunction,
-    ActorExecutor,
-    ActorRuntime,
-    ActorRuntimeClass
+from lucas.cluster.client import (
+    ClusterActor,
+    ClusterExecutor,
+    Context
 )
 import uuid
 import sys
@@ -16,13 +16,17 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-context = ActorContext.createContext("localhost:50051")
+context = Context.create_context("localhost:50052")
 
 data = []
 for i in range(100):
     x = torch.randn(10).tolist()
     y = [sum(x) + torch.randn(1).item() * 0.1]  # 添加一些噪声
     data.append((x, y))
+
+with open("data.txt", "w") as f:
+    for x, y in data:
+        f.write(f"{x}\t{y}\n")
 
 
 # 定义一个简单的线性模型
@@ -36,13 +40,7 @@ class LinearModel(nn.Module):
 
 
 
-@actor(
-    wrapper=ActorRuntimeClass,
-    dependency=[],
-    provider="actor",
-    name="Train",
-    venv="test2",
-)
+@actor
 class Train:
     def __init__(self):
         self.model = LinearModel(10, 1)
@@ -110,46 +108,15 @@ class Train:
 #     return {"weights": dict(weights), "metric": metric.get()}
 
 ps = ParameterServer(train_func=Train)
-ps.set_function_wrapper(ActorFunction)
-ps.set_provider("actor")
-ps.load_data(data)
+ps.load_data(os.path.abspath("data.txt"))
 ps.set_worker_num(4)
-ps_wfcontext = ps.export(ActorExecutor)
+ps_wfcontext = ps.export(ClusterExecutor)
 
 
 
 
-# print(metric)
 
 
-
-
-def actorWorkflowExportFunc(dict: dict):
-
-    # just use for local invoke
-    from lucas import routeBuilder
-
-    route = routeBuilder.build()
-    route_dict = {}
-    for function in route.functions:
-        route_dict[function.name] = function.handler
-    for workflow in route.workflows:
-        route_dict[workflow.name] = function.handler
-    metadata = Metadata(
-        id=str(uuid.uuid4()),
-        params=dict,
-        namespace=None,
-        router=route_dict,
-        request_type="invoke",
-        redis_db=None,
-        producer=None,
-    )
-    rt = ActorRuntime(metadata)
-    ps_wfcontext.set_runtime(rt)
-    workflow = ps_wfcontext.generate()
-    return workflow.execute()
-
-
-ps_fn = ps_wfcontext.export(actorWorkflowExportFunc)
+ps_fn = ps_wfcontext.export()
 result = ps_fn({})
 print("Params from PS:", result)

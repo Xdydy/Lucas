@@ -8,9 +8,11 @@ class Scheduler:
     def __init__(self, master_addr: str = "localhost:50051"):
         self._master_addr = master_addr
         
-        self._workers = self.get_workers().workers
-        for worker in self._workers:
+        workers = self.get_workers().workers
+        self._workers = []
+        for worker in workers:
             log.info(f"Worker {worker.worker_id} is available at {worker.host}:{worker.port} with worker rank {worker.worker_rank}")
+            self._workers.append(worker)
         host = master_addr.split(":")[0]
         port = int(master_addr.split(":")[1])
         self._workers.append(cluster_pb2.AddWorker(
@@ -26,24 +28,27 @@ class Scheduler:
         response = stub.GetWorkers(request)
         return response
 
-    def schedule(self, msg: controller_pb2.Message) -> platform_pb2.Message:
+    def schedule(self, msg: controller_pb2.Message) -> list[platform_pb2.Message]:
         # Implement scheduling logic here
         if msg.type == controller_pb2.MessageType.APPEND_FUNCTION:
-            return platform_pb2.Message(
+            return [platform_pb2.Message(
                 type=platform_pb2.MessageType.BROADCAST,
                 broadcast=platform_pb2.Broadcast(
                     controller_message=msg
                 )
-            )
+            )]
         else:
-            return platform_pb2.Message(
+            return [platform_pb2.Message(
                 type=platform_pb2.MessageType.APPLY_TO_WORKER,
                 apply_to_worker=platform_pb2.ApplyToWorker(
                     controller_message=msg
                 )
-            )
+            )]
     
     def feedback(self, result: controller_pb2.ReturnResult):
+        pass
+
+    def shutdown(self):
         pass
         
 class RobinScheduler(Scheduler):
@@ -83,38 +88,38 @@ class RobinScheduler(Scheduler):
                 if in_dags[data_node] == 0:
                     zero_nodes.append(data_node)
 
-    def schedule(self, msg):
+    def schedule(self, msg: controller_pb2.Message) -> list[platform_pb2.Message]:
         if msg.type == controller_pb2.MessageType.APPEND_FUNCTION:
-            return platform_pb2.Message(
+            return [platform_pb2.Message(
                 type=platform_pb2.MessageType.BROADCAST,
                 broadcast=platform_pb2.Broadcast(
                     controller_message=msg
                 )
-            )
+            )]
         elif msg.type == controller_pb2.MessageType.APPEND_FUNCTION_ARG:
             arg = msg.append_function_arg
             func_id = arg.instance_id
             apply_worker_id = self._node_to_worker[func_id]
             log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
-            return platform_pb2.Message(
+            return [platform_pb2.Message(
                 type=platform_pb2.MessageType.APPLY_TO_WORKER,
                 apply_to_worker=platform_pb2.ApplyToWorker(
                     controller_message=msg,
                     worker_id=apply_worker_id
                 )
-            )
+            )]
         elif msg.type == controller_pb2.MessageType.INVOKE_FUNCTION:
             invoke_func = msg.invoke_function
             func_id = invoke_func.instance_id
             apply_worker_id = self._node_to_worker[func_id]
             log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
-            return platform_pb2.Message(
+            return [platform_pb2.Message(
                 type=platform_pb2.MessageType.APPLY_TO_WORKER,
                 apply_to_worker=platform_pb2.ApplyToWorker(
                     controller_message=msg,
                     worker_id=apply_worker_id
                 )
-            )
+            )]
 
 class PathScheduler(Scheduler):
     class Path:
@@ -194,36 +199,36 @@ class PathScheduler(Scheduler):
             for node in path.get():
                 metadata = node.metadata()
                 self._node_to_worker[metadata['id']] = path.get_apply_to_worker()
-    def schedule(self, msg):
+    def schedule(self, msg: controller_pb2.Message) -> list[platform_pb2.Message]:
         if msg.type == controller_pb2.MessageType.APPEND_FUNCTION:
-            return platform_pb2.Message(
+            return [platform_pb2.Message(
                 type=platform_pb2.MessageType.BROADCAST,
                 broadcast=platform_pb2.Broadcast(
                     controller_message=msg
                 )
-            )
+            )]
         elif msg.type == controller_pb2.MessageType.APPEND_FUNCTION_ARG:
             arg = msg.append_function_arg
             func_id = arg.instance_id
             apply_worker_id = self._node_to_worker[func_id]
-            return platform_pb2.Message(
+            return [platform_pb2.Message(
                 type=platform_pb2.MessageType.APPLY_TO_WORKER,
                 apply_to_worker=platform_pb2.ApplyToWorker(
                     controller_message=msg,
                     worker_id=apply_worker_id
                 )
-            )
+            )]
         elif msg.type == controller_pb2.MessageType.INVOKE_FUNCTION:
             invoke_func = msg.invoke_function
             func_id = invoke_func.instance_id
             apply_worker_id = self._node_to_worker[func_id]
-            return platform_pb2.Message(
+            return [platform_pb2.Message(
                 type=platform_pb2.MessageType.APPLY_TO_WORKER,
                 apply_to_worker=platform_pb2.ApplyToWorker(
                     controller_message=msg,
                     worker_id=apply_worker_id
                 )
-            )
+            )]
         
 class KeyPathScheduler(Scheduler):
     class Path:
@@ -234,9 +239,15 @@ class KeyPathScheduler(Scheduler):
             self._nodes: list[DAGNode] = []
             self._apply_to_worker = None
             self._crush_node: ControlNode | None = None
-            self._transmit_data_size = 0
+            self._transmit_data_size = -1
         def set_crush_node(self, node):
             self._crush_node = node
+        def get_crush_node(self):
+            return self._crush_node
+        def put_crush_node_in_nodes(self):
+            if self._crush_node is not None:
+                self._nodes.append(self._crush_node)
+            self._crush_node = None
         def get(self):
             return self._nodes
         def add(self, node):
@@ -259,48 +270,43 @@ class KeyPathScheduler(Scheduler):
         self._origin_in_dags = {}
         self._paths: list[KeyPathScheduler.Path] = []
         self._visited: dict[str, KeyPathScheduler.Path] = {}
-        self._crush_paths: dict[str, list[KeyPathScheduler.Path]] = {}
+        # map controll node to paths that crush at this node
+        self._crush_paths: dict[str, set[KeyPathScheduler.Path]] = {}
+        self._ready_crush_controll_node: set[str] = set()
+        self._unknown_requests: list[controller_pb2.Message] = []
+        self._pending_nodes: list[tuple[DAGNode, KeyPathScheduler.Path | None]] = []
 
-    def _topo(self):
-        _zero_nodes = [node for node, in_degree in self._in_dags.items() if in_degree == 0 and node not in self._visited]
-        while len(_zero_nodes) > 0:
-            node = _zero_nodes.pop()
-            if isinstance(node, DataNode):
-                # 相当于图上的边，后面跟随的是下一个计算任务，通常需要放在同一个节点上，如果下一个任务有多个入度则代表冲突
-                path = None
-                if node.get_pre_control_node() is not None:
-                    pre_ctl_node = node.get_pre_control_node()
-                    path = self._visited[pre_ctl_node._id]
-                    path.add(node)
-                else:
-                    path = self.Path()
-                    self._paths.append(path)
-                    path.add(node)
-                self._visited[node._id] = path
-                for ctl_node in node.get_succ_control_nodes():
-                    self._in_dags[ctl_node] -= 1
-                    if self._origin_in_dags[ctl_node] == 1:
-                        _zero_nodes.append(ctl_node)
-                    else:
-                        # 冲突节点，设置断点
-                        path.set_crush_node(node)
-                        if ctl_node._id not in self._crush_paths:
-                            self._crush_paths[ctl_node._id] = []
-                        self._crush_paths[ctl_node._id].append(path)
-            elif isinstance(node, ControlNode):
-                if len(node.get_pre_data_nodes()) > 0:
-                    pre_data_node = node.get_pre_data_nodes()[0]
-                    path = self._visited[pre_data_node._id]
-                    path.add(node)
-                else:
-                    path = self.Path()
-                    self._paths.append(path)
-                    path.add(node)
-                self._visited[node._id] = path
-                data_node = node.get_data_node()
-                self._in_dags[data_node] -= 1
-                if self._in_dags[data_node] == 0:
-                    _zero_nodes.append(data_node)
+    def dfs(self, u: ControlNode, path: Path = None):
+        assert isinstance(u, ControlNode)
+        if u._id in self._visited:
+            return
+        if path is None:
+            path = self.Path()
+            self._paths.append(path)
+        path.add(u)
+        self._visited[u._id] = path
+        for pre_edge in u.get_pre_data_nodes():
+            path.add(pre_edge)
+            self._visited[u._id] = path
+        edge: DataNode = u.get_data_node()
+        for v in edge.get_succ_control_nodes():
+            self._in_dags[v] -= 1
+            if self._origin_in_dags[v] > 1:
+                path.set_crush_node(v)
+                if v._id not in self._crush_paths:
+                    self._crush_paths[v._id] = set()
+                self._crush_paths[v._id].add(path)
+                if len(self._crush_paths[v._id]) == self._origin_in_dags[v]:
+                    self._ready_crush_controll_node.add(v._id)
+            else:
+                self.dfs(v, path)
+
+
+
+    def step(self):
+        while len(self._pending_nodes) > 0:
+            node, path = self._pending_nodes.pop(0)
+            self.dfs(node, path)
         
     def analyze(self, dag: DAG):
         """
@@ -310,16 +316,17 @@ class KeyPathScheduler(Scheduler):
         nodes = dag.get_nodes()
         self._in_dags = {}
         for node in nodes:
-            self._in_dags[node] = 0
+            if isinstance(node, ControlNode):
+                self._in_dags[node] = 0
         for node in nodes:
-            if isinstance(node, DataNode):
-                for ctl_node in node.get_succ_control_nodes():
+            if isinstance(node, ControlNode):
+                data_node = node.get_data_node()
+                for ctl_node in data_node.get_succ_control_nodes():
                     self._in_dags[ctl_node] += 1
-            elif isinstance(node, ControlNode):
-                self._in_dags[node.get_data_node()] += 1
 
         self._origin_in_dags = self._in_dags.copy()
-        self._topo()
+        self._pending_nodes = [(node, None) for node, in_degree in self._in_dags.items() if in_degree == 0 and node not in self._visited]
+        self.step()
         worker_index = 0
         for path in self._paths:
             path.set_apply_to_worker(self._workers[worker_index].worker_id)
@@ -333,69 +340,120 @@ class KeyPathScheduler(Scheduler):
         path = self._visited[node_id]
         path.set_transmit_data_size(result.value.size)
 
-    def _find_crush_pathes(self, func_id: str) -> list[Path]:
-        return self._crush_paths.get(func_id, [])
-
-    def _find_best_worker(self, func_id: str) -> str:
-        paths = self._find_crush_pathes(func_id)
-        min_path = None
-        for path in paths:
-            if min_path is None:
-                min_path = path
-            else:
-                if path.get_transmit_data_size() < min_path.get_transmit_data_size():
+    def handle_ready_controll_nodes(self):
+        successful_ctl_id = []
+        for ctl_node_id in self._ready_crush_controll_node:
+            paths = self._crush_paths[ctl_node_id]
+            min_path = None
+            for path in paths:
+                if path.get_transmit_data_size() != -1:
+                    min_path = None
+                    break
+                if min_path is None:
                     min_path = path
+                else:
+                    if path.get_transmit_data_size() < min_path.get_transmit_data_size():
+                        min_path = path
 
-        for path in paths:
-            if path != min_path:
-                path.set_apply_to_worker(min_path.get_apply_to_worker())
+            if min_path is None:
+                continue
+            successful_ctl_id.append(ctl_node_id)
+            for path in paths:
+                if path != min_path:
+                    path.set_transmit_data_size(-1)
+                else:
+                    self._pending_nodes.append((path.get_crush_node(), path))
+                    path.put_crush_node_in_nodes()
+                    path.set_transmit_data_size(-1)
+
+        self.step()
+        for ctl_id in successful_ctl_id:
+            self._ready_crush_controll_node.remove(ctl_id)
         
-        return min_path.get_apply_to_worker()
+    
+    def _handle_unknown_request(self, msg: controller_pb2.Message) -> platform_pb2.Message:
+        def get_function_id() -> str:
+            if msg.type == controller_pb2.MessageType.APPEND_FUNCTION_ARG:
+                return msg.append_function_arg.instance_id
+            elif msg.type == controller_pb2.MessageType.INVOKE_FUNCTION:
+                return msg.invoke_function.instance_id
+        func_id = get_function_id()
+        if self._visited.get(func_id) is None:
+            return None
+        path = self._visited.get(func_id)
+        apply_worker_id = path.get_apply_to_worker()
+        if apply_worker_id is None:
+            return None
+        return platform_pb2.Message(
+            type=platform_pb2.MessageType.APPLY_TO_WORKER,
+            apply_to_worker=platform_pb2.ApplyToWorker(
+                controller_message=msg,
+                worker_id=apply_worker_id
+            )
+        )
+
+    
+    def handle_unknown_requests(self) -> list[platform_pb2.Message]:
+        self.handle_ready_controll_nodes()
+        msgs = []
+        while len(self._unknown_requests) > 0:
+            msg = self._unknown_requests.pop(0)
+            platform_msg = self._handle_unknown_request(msg)
+            if platform_msg is not None:
+                msgs.append(platform_msg)
+        return msgs
 
     def schedule(self, msg: controller_pb2.Message) -> platform_pb2.Message:
         """
         决策每个报文的调度策略
         """
+        msgs = []
         if msg.type == controller_pb2.MessageType.APPEND_FUNCTION:
-            return platform_pb2.Message(
+            msgs.append(platform_pb2.Message(
                 type=platform_pb2.MessageType.BROADCAST,
                 broadcast=platform_pb2.Broadcast(
                     controller_message=msg
                 )
-            )
+            ))
         elif msg.type == controller_pb2.MessageType.APPEND_FUNCTION_ARG:
             arg = msg.append_function_arg
             func_id = arg.instance_id
-            if self._visited.get(func_id) is not None:
+            if self._visited.get(func_id) is not None and self._visited[func_id].get_apply_to_worker() is not None:
                 apply_worker_id = self._visited[func_id].get_apply_to_worker()
                 log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
-                return platform_pb2.Message(
+                msgs.append(platform_pb2.Message(
                     type=platform_pb2.MessageType.APPLY_TO_WORKER,
                     apply_to_worker=platform_pb2.ApplyToWorker(
                         controller_message=msg,
                         worker_id=apply_worker_id
                     )
-                )
+                ))
             else:
-                apply_worker_id = self._find_best_worker(func_id)
-                self._topo()
-                log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
-                return platform_pb2.Message(
-                    type=platform_pb2.MessageType.APPLY_TO_WORKER,
-                    apply_to_worker=platform_pb2.ApplyToWorker(
-                        controller_message=msg,
-                        worker_id=apply_worker_id
-                    )
-                )
+                self._unknown_requests.append(msg)  
         elif msg.type == controller_pb2.MessageType.INVOKE_FUNCTION:
             invoke_func = msg.invoke_function
             func_id = invoke_func.instance_id
-            apply_worker_id = self._visited[func_id].get_apply_to_worker()
-            log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
-            return platform_pb2.Message(
-                type=platform_pb2.MessageType.APPLY_TO_WORKER,
-                apply_to_worker=platform_pb2.ApplyToWorker(
-                    controller_message=msg,
-                    worker_id=apply_worker_id
-                )
-            )
+            if self._visited.get(func_id) is None or self._visited[func_id].get_apply_to_worker() is None:
+                self._unknown_requests.append(msg)
+            else:
+                apply_worker_id = self._visited[func_id].get_apply_to_worker()
+                log.info(f"Function {func_id} is assigned to worker {apply_worker_id}")
+                msgs.append(platform_pb2.Message(
+                    type=platform_pb2.MessageType.APPLY_TO_WORKER,
+                    apply_to_worker=platform_pb2.ApplyToWorker(
+                        controller_message=msg,
+                        worker_id=apply_worker_id
+                    )
+                ))
+        msgs += self.handle_unknown_requests()
+        return msgs
+        
+    def shutdown(self):
+        self._node_to_worker.clear()
+        self._in_dags.clear()
+        self._paths.clear()
+        self._origin_in_dags.clear()
+        self._paths.clear()
+        self._visited.clear()
+        self._crush_paths.clear()
+

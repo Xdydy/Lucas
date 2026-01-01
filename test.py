@@ -1,11 +1,10 @@
-import dill
+def funca(num):
+    for i in range(num):
+        yield i
 
-def func():
-    yield 1
-    yield 2
-    yield 3
+def funcb():
+    yield from funca(10)
 
-serialized = dill.dumps(func)
-deserialized = dill.loads(serialized)
-for value in deserialized():
-    print(value)
+g = funcb()
+for i in g:
+    print(i)

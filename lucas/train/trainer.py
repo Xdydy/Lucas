@@ -1,6 +1,6 @@
 from typing import Callable, Dict, Any, List
 from lucas import function, workflow, Workflow, actor, ActorClass
-from lucas._private.functions import Function, FunctionConfig
+from lucas._private.functions import Function
 from datasets import Dataset
 import time
 import inspect
@@ -236,7 +236,7 @@ class ParameterServer:
     def set_provider(self, provider):
         self._provider = provider
     def set_worker_num(self, num: int):
-        self._worker_num = num
+        self._worker_num = 1
 
     def generate_ps_func(self):
         # 1. 生成参数名称列表

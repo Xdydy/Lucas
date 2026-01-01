@@ -144,14 +144,14 @@ class Context:
                 self._result[obj_id] = f
         return self._result[obj_id]
     
-    def schedule(self, msg: controller_pb2.Message) -> platform_pb2.Message:
+    def schedule(self, msg: controller_pb2.Message) -> list[platform_pb2.Message]:
         if self._scheduler is None:
-            return platform_pb2.Message(
+            return [platform_pb2.Message(
                 type=platform_pb2.MessageType.APPLY_TO_WORKER,
                 apply_to_worker=platform_pb2.ApplyToWorker(
                     controller_message=msg
                 )
-            )
+            )]
         else:
             return self._scheduler.schedule(msg)
         
@@ -160,8 +160,9 @@ class Context:
             self._scheduler.feedback(result)
 
     def send(self, msg: controller_pb2.Message):
-        platform_msg = self.schedule(msg)
-        self._msg_queue.put(platform_msg)
+        platform_msgs = self.schedule(msg)
+        for platform_msg in platform_msgs:
+            self._msg_queue.put(platform_msg)
 
     def get_obj(self, refid: str):
         channel = grpc.insecure_channel(self._master_addr, options=[

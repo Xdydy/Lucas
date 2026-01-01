@@ -16,7 +16,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-context = Context.create_context("localhost:50051")
+context = Context.create_context("localhost:50052")
 
 data = []
 for i in range(100):

@@ -1024,12 +1024,14 @@ class Master(
 
     def GetObject(self, request, context):
         resp_stream = StorageService.GetObject(self, request, context)
+        flag = True
         for resp in resp_stream:
             if resp.error != "":
+                flag = False
                 break
             yield resp
-        else:
-            return self.get_object(request)
+        if not flag:
+            yield from self.get_object(request)
     
     def ClearStore(self, request, context):
         StorageService.ClearStore(self, request, context)
@@ -1039,10 +1041,12 @@ class Master(
     def get_object(self, request: store_pb2.GetObjectRequest):
         ref = request.ref
         if not self._store_proxy.exists(ref):
-            return store_pb2.GetObjectResponse(
+            yield store_pb2.GetObjectResponse(
                 error=f"Reference {ref} not found."
             )
+            return
         worker_id = self._store_proxy.get_worker_id(ref)
+        log.info(f"Worker {worker_id} is responsible for object {ref}")
         meta = self._controller_proxy.get_worker(worker_id)
         channel = grpc.insecure_channel(
             f"{meta._host}:{meta._port}",
@@ -1050,12 +1054,14 @@ class Master(
         )
         stub = store_pb2_grpc.StoreServiceStub(channel)
         resp_stream: store_pb2.GetObjectResponse = stub.GetObject(request)
+        flag = True
         for resp in resp_stream:
             if resp.error != "":
                 log.error(f"Error getting object: {resp.error}")
+                flag = False
                 break
             yield resp
-        else:
+        if not flag:
             yield store_pb2.GetObjectResponse(
                 error=f"Failed to get object {ref} from worker {worker_id}."
             )

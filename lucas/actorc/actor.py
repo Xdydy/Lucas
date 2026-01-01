@@ -112,7 +112,7 @@ class ActorContext:
                             future = Future()
                             future.set_result(value)
                             self._result_map[key] = future
-                elif response.Type == controller_pb2.CommandType.FR_RESPONSE_OBJECT:
+                elif response.Type == controller_pb2.CommandType.BK_RESPONSE_OBJECT:
                     response_object: controller_pb2.ResponseObject = response.ResponseObject
                     obj_id = response_object.ID
                     value = EncDec.decode(response_object.Value)
@@ -289,12 +289,13 @@ class ActorFunction(Function):
                             value, language=platform_pb2.LANG_PYTHON
                         ),
                     )
+                name = self._config.get("name", fn.__name__)
                 actorContext.send(controller_pb2.Message(
                     Type=controller_pb2.CommandType.FR_APPEND_ARG,
                     AppendArg=controller_pb2.AppendArg(
                         SessionID=sessionID,
                         InstanceID=self._instance_id,
-                        Name=self._config.name,
+                        Name=name,
                         Param=key,
                         Value=rpc_data,
                     ),
@@ -304,10 +305,10 @@ class ActorFunction(Function):
                 Invoke=controller_pb2.Invoke(
                     SessionID=sessionID,
                     InstanceID=self._instance_id,
-                    Name=self._config.name,
+                    Name=name,
                 ),
             ))
-            key = f"{sessionID}-{self._instance_id}-{self._config.name}"
+            key = f"{sessionID}-{self._instance_id}-{name}"
             result = actorContext.get_result(key)
             result = result.result()
             actorContext.send(controller_pb2.Message(
