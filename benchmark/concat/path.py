@@ -10,8 +10,8 @@ context = Context.create_context()
 scheduler = KeyPathScheduler()
 context.set_scheduler(scheduler)
 
-matrix_size = 100
-matrix_num = 4
+with open("input", "r") as f:
+    matrix_size, matrix_num = map(int, f.readline().split())
 
 @function
 def generate(size: int = 32) -> bytes:
@@ -46,16 +46,27 @@ w_func = matrix_concat.export()
 #     (3000, 2000),
 #     (4000, 2000),
 # ]
+start_t = time.time()
+result = w_func({})
+end_t = time.time()
+cluster_num = "4"
 with open("result.json", "r") as f:
-    data = json.load(f)
-    if 'path' not in data:
-        data['path'] = {}
-    start_t = time.time()
-    result = w_func({})
-    end_t = time.time()
-    data['path'].update({
-        f"{matrix_size}x{matrix_num}": end_t - start_t
+    o_data = json.load(f)
+    if "path" not in o_data:
+        o_data["path"] = {}
+    data = o_data["path"]
+    key = f"matrix_num={matrix_num},cluster_num={cluster_num}"
+    if key not in data:
+        data[key] = []
+    data[key].append((matrix_size, end_t - start_t))
+    o_data.update({
+        "path": data
     })
 
+print(f"Total execution time: {end_t - start_t}")
+    
+    
+    
+
 with open("result.json", "w") as f:
-    json.dump(data, f, indent=2)
+    json.dump(o_data, f, indent=2)

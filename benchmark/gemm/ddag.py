@@ -7,15 +7,23 @@ from typing import Dict, Tuple
 import json
 
 context = Context.create_context()
-with open("input", "r") as f:
-    line = f.readline()
-    matrix_size, batch_size = map(int, line.split())
+matrix_size = 256
+batch_size = 16
 
 @function
-def generate(matrix_size: int):
+def generate(matrix_size):
     matrixA = [[1.0 for _ in range(matrix_size)] for _ in range(matrix_size)]
     matrixB = [[1.0 for _ in range(matrix_size)] for _ in range(matrix_size)]
     return {"matrixA": matrixA, "matrixB": matrixB}
+@function
+def splitA(matrix, i):
+    matrixA = matrix['matrixA']
+    return matrixA[i * batch_size:(i + 1) * batch_size]
+
+@function
+def splitB(matrix, j):
+    matrixB = matrix['matrixB']
+    return [row[j * batch_size:(j + 1) * batch_size] for row in matrixB]
 @function
 def compute(matrixA: list[list], matrixB: list[list]) -> list:
     result = []
@@ -33,30 +41,38 @@ def compute(matrixA: list[list], matrixB: list[list]) -> list:
     return result
 
 @function
-def splitA(matrix, i):
-    matrixA = matrix['matrixA']
-    return matrixA[i * batch_size:(i + 1) * batch_size]
-
-@function
-def splitB(matrix, j):
-    matrixB = matrix['matrixB']
-    return [row[j * batch_size:(j + 1) * batch_size] for row in matrixB]
+def merge(matrixA: list[list], matrixB: list[list]) -> list:
+    result = []
+    for i in range(len(matrixA)):
+        row = []
+        for j in range(len(matrixB[0])):
+            row.append(matrixA[i][j] + matrixB[i][j])
+        result.append(row)
+    return result
 
 @workflow(executor=ClusterExecutor)
 def gemm(wf:Workflow):
     results = []
-    matrix = wf.call("generate", {"matrix_size": matrix_size})
     sub_matrix_as = []
     sub_matrix_bs = []
     for i in range(matrix_size // batch_size):
-        sub_matrix_as.append(wf.call("splitA", {"matrix": matrix, "i": i}))
-        sub_matrix_bs.append(wf.call("splitB", {"matrix": matrix, "j": i}))
+        sub_matrix_as.append(wf.call("splitA", {"i": i}))
+        sub_matrix_bs.append(wf.call("splitB", {"j": i}))
     for i in range(matrix_size // batch_size):
         for j in range(matrix_size // batch_size):
             a = sub_matrix_as[i]
             b = sub_matrix_bs[j]
             result = wf.call("compute", {"matrixA": a, "matrixB": b})
             results.append(result)
+    # while len(results) > 1:
+    #     merged_results = []
+    #     for i in range(0, len(results), 2):
+    #         if i + 1 < len(results):
+    #             merged = wf.call("merge", {"a": results[i], "b": results[i + 1]})
+    #             merged_results.append(merged)
+    #         else:
+    #             merged_results.append(results[i])
+    #     results = merged_results
     return results[0]
 
 w_func = gemm.export()
@@ -68,22 +84,11 @@ end_t = time.time()
 
 with open("result.json", "r") as f:
     data = json.load(f)
-    if 'ad' not in data:
-        data['ad'] = {}
-    current_ad = data['ad']
-    if f"matrix_size" not in current_ad:
-        current_ad[f"matrix_size"] = {}
-    
-    data_matrix_size = current_ad[f"matrix_size"]
-    if f"{matrix_size}" not in data_matrix_size:
-        data_matrix_size[f"{matrix_size}"] = []
-    data_matrix_size[f"{matrix_size}"].append((batch_size, end_t - start_t))
-    data_matrix_size[f"{matrix_size}"] = sorted(data_matrix_size[f"{matrix_size}"], key=lambda x: int(x[0]))
-
-    data_matrix_size = dict(sorted(data_matrix_size.items(), key=lambda x: int(x[0])))
-
-    current_ad.update({f"matrix_size": data_matrix_size})
-    current_ad = dict(sorted(current_ad.items()))
+    if 'ad' in data:
+        current_ad = data['ad']
+    else:
+        current_ad = {}
+    current_ad.update({f"{matrix_size}x{batch_size}": end_t - start_t})
     data.update({"ad": current_ad})
 
 
