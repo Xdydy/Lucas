@@ -39,7 +39,7 @@ for i in range(2):
     ax.legend()
 # 添加标题和标签
 axes[0].set_ylabel('Latency (log scale)')
-plt.suptitle('Gemm\'s Latency of Different Matrix Size and Matrix Batch Size')
+plt.suptitle('Gemm\'s Latency of Different Matrix Size and Matrix Parallelism')
 fig.savefig('gemm1.png')
 plt.close()
 
@@ -62,7 +62,7 @@ y1 = y1[::-1]
 y2 = y2[::-1]
 plt.plot(x, y1, marker='o', color='r', label='1024x1024')
 plt.plot(x, y2, marker='s', color='g', label='2048x2048')
-plt.title('Gemm\'s Latency of Different Matrix Size and Matrix Batch Size')
+plt.title('Gemm\'s Latency of Different Matrix Size and Matrix Parallelism')
 plt.xlabel('Matrix\'s Parallelism $(2^x)$')
 plt.ylabel('Latency (log scale)')
 plt.legend()

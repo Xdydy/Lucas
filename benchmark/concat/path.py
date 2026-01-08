@@ -49,13 +49,13 @@ w_func = matrix_concat.export()
 start_t = time.time()
 result = w_func({})
 end_t = time.time()
-cluster_num = "4"
+cluster_num = "1"
 with open("result.json", "r") as f:
     o_data = json.load(f)
     if "path" not in o_data:
         o_data["path"] = {}
     data = o_data["path"]
-    key = f"matrix_num={matrix_num},cluster_num={cluster_num}"
+    key = f"matrix_num={matrix_num}"
     if key not in data:
         data[key] = []
     data[key].append((matrix_size, end_t - start_t))
@@ -63,10 +63,19 @@ with open("result.json", "r") as f:
         "path": data
     })
 
-print(f"Total execution time: {end_t - start_t}")
-    
-    
+with open("scheduler.json", 'r') as f:
+    scheduler_data = json.load(f)
+    key = f"matrix_size={matrix_size},cluster_num={cluster_num}"
+    if key not in scheduler_data:
+        scheduler_data[key] = []
+    scheduler_data[key].append((matrix_num, end_t - start_t, scheduler.get_total_scheduler_time()))
     
 
+print(f"Total execution time: {end_t - start_t}")
+print(f"Total scheduler time: {scheduler.get_total_scheduler_time()}")
+    
+    
+with open("scheduler.json", 'w') as f:
+    json.dump(scheduler_data, f, indent=2)
 with open("result.json", "w") as f:
     json.dump(o_data, f, indent=2)

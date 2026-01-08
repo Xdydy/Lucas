@@ -3,6 +3,7 @@ from lucas.workflow.dag import DAG, ControlNode, DAGNode, DataNode
 
 from .protos import cluster_pb2, cluster_pb2_grpc, controller_pb2, platform_pb2
 import grpc
+import time
 
 class Scheduler:
     def __init__(self, master_addr: str = "localhost:50051"):
@@ -275,6 +276,10 @@ class KeyPathScheduler(Scheduler):
         self._ready_crush_controll_node: set[str] = set()
         self._unknown_requests: list[controller_pb2.Message] = []
         self._pending_nodes: list[tuple[DAGNode, KeyPathScheduler.Path | None]] = []
+        self._scheduler_time = 0
+    
+    def get_total_scheduler_time(self):
+        return self._scheduler_time
 
     def dfs(self, u: ControlNode, path: Path = None):
         assert isinstance(u, ControlNode)
@@ -407,6 +412,7 @@ class KeyPathScheduler(Scheduler):
         """
         决策每个报文的调度策略
         """
+        start_t = time.time()
         msgs = []
         if msg.type == controller_pb2.MessageType.APPEND_FUNCTION:
             msgs.append(platform_pb2.Message(
@@ -446,6 +452,7 @@ class KeyPathScheduler(Scheduler):
                     )
                 ))
         msgs += self.handle_unknown_requests()
+        self._scheduler_time += time.time() - start_t
         return msgs
         
     def shutdown(self):

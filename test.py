@@ -1,10 +1,20 @@
-def funca(num):
-    for i in range(num):
-        yield i
+import psutil
+import os
 
-def funcb():
-    yield from funca(10)
 
-g = funcb()
-for i in g:
-    print(i)
+pid = os.getpid()
+process = psutil.Process(pid)
+
+memory_info = process.memory_info()
+print(memory_info.rss)
+print(memory_info.vms)
+print(memory_info.shared)
+
+a = []
+for i in range(1000000):
+    a.append(i)
+
+memory_info = process.memory_info()
+print(memory_info.rss)
+print(memory_info.vms)
+print(memory_info.shared)
